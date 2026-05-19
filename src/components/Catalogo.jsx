@@ -112,7 +112,7 @@ export default function Catalogo() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: 'var(--beige-claro)' }}>
+    <div style={{ minHeight: '100vh', backgroundColor: 'var(--beige-claro)', flex: 1, width: '100%' }}>
 
       {/* Header */}
       <div style={{ backgroundColor: 'var(--verde)', padding: '1rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
