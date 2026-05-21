@@ -21,10 +21,7 @@ export function AppProvider({ children }) {
   const [retazos,       setRetazos]       = useState([])
   const [cargando,      setCargando]      = useState(true)
 
-  // ── Cargar datos al iniciar ───────────────────────────────────────────────
-  useEffect(() => {
-    cargarTodo()
-  }, [])
+  useEffect(() => { cargarTodo() }, [])
 
   async function cargarTodo() {
     setCargando(true)
@@ -54,6 +51,11 @@ export function AppProvider({ children }) {
     }
   }
 
+  // ── PRODUCTOS (solo estado local) ─────────────────────────────────────────
+  function actualizarProducto(id, cambios) {
+    setProductos(prev => prev.map(p => p.id === id ? { ...p, ...cambios } : p))
+  }
+
   // ── CLIENTES ──────────────────────────────────────────────────────────────
   async function agregarCliente(cliente) {
     const { data, error } = await supabase.from('clientes').insert([cliente]).select().single()
@@ -61,14 +63,12 @@ export function AppProvider({ children }) {
     setClientes(prev => [data, ...prev])
     return data
   }
-
   async function actualizarCliente(id, cambios) {
     const { data, error } = await supabase.from('clientes').update(cambios).eq('id', id).select().single()
     if (error) { console.error(error); return null }
     setClientes(prev => prev.map(c => c.id === id ? data : c))
     return data
   }
-
   async function eliminarCliente(id) {
     const { error } = await supabase.from('clientes').delete().eq('id', id)
     if (error) { console.error(error); return false }
@@ -83,14 +83,12 @@ export function AppProvider({ children }) {
     setCotizaciones(prev => [data, ...prev])
     return data
   }
-
   async function actualizarCotizacion(id, cambios) {
     const { data, error } = await supabase.from('cotizaciones').update(cambios).eq('id', id).select().single()
     if (error) { console.error(error); return null }
     setCotizaciones(prev => prev.map(c => c.id === id ? data : c))
     return data
   }
-
   async function eliminarCotizacion(id) {
     const { error } = await supabase.from('cotizaciones').delete().eq('id', id)
     if (error) { console.error(error); return false }
@@ -105,14 +103,12 @@ export function AppProvider({ children }) {
     setVentas(prev => [data, ...prev])
     return data
   }
-
   async function actualizarVenta(id, cambios) {
     const { data, error } = await supabase.from('ventas').update(cambios).eq('id', id).select().single()
     if (error) { console.error(error); return null }
     setVentas(prev => prev.map(v => v.id === id ? data : v))
     return data
   }
-
   async function eliminarVenta(id) {
     const { error } = await supabase.from('ventas').delete().eq('id', id)
     if (error) { console.error(error); return false }
@@ -127,14 +123,12 @@ export function AppProvider({ children }) {
     setOrdenes(prev => [data, ...prev])
     return data
   }
-
   async function actualizarOrden(id, cambios) {
     const { data, error } = await supabase.from('ordenes').update(cambios).eq('id', id).select().single()
     if (error) { console.error(error); return null }
     setOrdenes(prev => prev.map(o => o.id === id ? data : o))
     return data
   }
-
   async function eliminarOrden(id) {
     const { error } = await supabase.from('ordenes').delete().eq('id', id)
     if (error) { console.error(error); return false }
@@ -149,14 +143,12 @@ export function AppProvider({ children }) {
     setRetazos(prev => [data, ...prev])
     return data
   }
-
   async function actualizarRetazo(id, cambios) {
     const { data, error } = await supabase.from('retazos').update(cambios).eq('id', id).select().single()
     if (error) { console.error(error); return null }
     setRetazos(prev => prev.map(r => r.id === id ? data : r))
     return data
   }
-
   async function eliminarRetazo(id) {
     const { error } = await supabase.from('retazos').delete().eq('id', id)
     if (error) { console.error(error); return false }
@@ -166,47 +158,24 @@ export function AppProvider({ children }) {
 
   return (
     <AppContext.Provider value={{
-      // Estado
-      productos,    setProductos,
+      productos,    setProductos,    actualizarProducto,
       clientes,     setClientes,
       cotizaciones, setCotizaciones,
       ventas,       setVentas,
       ordenes,      setOrdenes,
       retazos,      setRetazos,
       cargando,
-
-      // Funciones Clientes
-      agregarCliente, actualizarCliente, eliminarCliente,
-
-      // Funciones Cotizaciones
-      agregarCotizacion, actualizarCotizacion, eliminarCotizacion,
-
-      // Funciones Ventas
-      agregarVenta, actualizarVenta, eliminarVenta,
-
-      // Funciones Ordenes
-      agregarOrden, actualizarOrden, eliminarOrden,
-
-      // Funciones Retazos
-      agregarRetazo, actualizarRetazo, eliminarRetazo,
-
-      // Recargar todo
+      agregarCliente,     actualizarCliente,     eliminarCliente,
+      agregarCotizacion,  actualizarCotizacion,  eliminarCotizacion,
+      agregarVenta,       actualizarVenta,       eliminarVenta,
+      agregarOrden,       actualizarOrden,       eliminarOrden,
+      agregarRetazo,      actualizarRetazo,      eliminarRetazo,
       cargarTodo,
     }}>
       {cargando ? (
-        <div style={{
-          minHeight: '100vh', display: 'flex', alignItems: 'center',
-          justifyContent: 'center', backgroundColor: '#f5f0e8',
-          flexDirection: 'column', gap: '16px',
-        }}>
-          <div style={{
-            width: '48px', height: '48px', borderRadius: '50%',
-            border: '4px solid #D4C4A0', borderTopColor: '#2D4A2D',
-            animation: 'spin 0.8s linear infinite',
-          }} />
-          <p style={{ color: '#2D4A2D', fontWeight: '600', fontSize: '15px' }}>
-            Cargando Decoraciones Gallito y Piedra...
-          </p>
+        <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f0e8', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: '50%', border: '4px solid #D4C4A0', borderTopColor: '#2D4A2D', animation: 'spin 0.8s linear infinite' }} />
+          <p style={{ color: '#2D4A2D', fontWeight: '600', fontSize: '15px' }}>Cargando Decoraciones Gallito y Piedra...</p>
           <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
         </div>
       ) : children}
