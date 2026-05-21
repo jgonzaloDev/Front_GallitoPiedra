@@ -4,25 +4,48 @@ import { useApp } from '../context/AppContext'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
-// ── Datos fijos de la empresa ─────────────────────────────────────────────────
 const EMPRESA = {
-  razon_social: 'Félix Mendoza Ochante',
-  ruc:          '10091300775',
-  direccion:    'Jr. Flor Iris Sn Asc. de Servicios Múltiples SA Int. 23 Alt. Comisaría Pamplona 1, San Juan de Miraflores - Lima - Lima',
-  telefono:     '952739105',
-  bcp_cuenta:   '19493170245057',
-  bcp_cci:      '00219419317024505793',
-  bbva_cuenta:  '00110814-0279182672-16',
-  bbva_cci:     '011-814-0000279182672-16',
-  nombre_titular: 'Félix Mendoza Ochante',
-  validez_dias: 15,
-  condiciones: [
+  nombre_comercial: 'Decoraciones Gallito y Piedra',
+  slogan:           'Piedra y Laja: Elegancia Natural que Perdura',
+  razon_social:     'Félix Mendoza Ochante',
+  ruc:              '10091300775',
+  direccion:        'Jr. Flor Iris Sn Asc. de Servicios Múltiples SA Int. 23 Alt. Comisaría Pamplona 1, San Juan de Miraflores - Lima - Lima',
+  telefono:         '952739105',
+  bcp_cuenta:       '19493170245057',
+  bcp_cci:          '00219419317024505793',
+  bbva_cuenta:      '00110814-0279182672-16',
+  bbva_cci:         '011-814-0000279182672-16',
+  nombre_titular:   'Félix Mendoza Ochante',
+  condiciones_con_igv: [
+    'La presente cotización tiene una validez de 15 días.',
+    'Los precios incluyen IGV (18%).',
+    'Forma de pago: A convenir.',
+    'Tiempo estimado de ejecución: Según programación acordada.',
+  ],
+  condiciones_sin_igv: [
     'La presente cotización tiene una validez de 15 días.',
     'Los precios no incluyen IGV.',
     'Forma de pago: A convenir.',
     'Tiempo estimado de ejecución: Según programación acordada.',
   ],
 }
+
+const IMAGENES_PRODUCTOS = {
+  'Laja Granítica Ayacuchana': '/productos/granitica.png',
+  'Laja Pizarra Negra':        '/productos/pizarra.png',
+  'Laja Talomoye':             '/productos/talamoye.png',
+  'Laja Yura Blanca':          '/productos/yura.png',
+  'Laja Arequipeña':           '/productos/arequipena.png',
+  'Rococho Arequipeño':        '/productos/rococho.png',
+}
+
+const VERDE       = [45, 74, 45]
+const VERDE_CLARO = [74, 124, 89]
+const BEIGE       = [212, 196, 160]
+const BEIGE_FONDO = [245, 240, 232]
+const BLANCO      = [255, 255, 255]
+const GRIS_TEXTO  = [80, 80, 80]
+const NEGRO       = [30, 30, 30]
 
 const estadoConfig = {
   borrador:  { label: 'Borrador',  color: '#5F5E5A', bg: '#F1EFE8' },
@@ -40,245 +63,317 @@ const itemVacio = () => ({
   cantidad: 1, unidad: 'm²', precio_unit: 0, subtotal: 0,
 })
 
-function calcularSubtotal(items) {
-  return items.reduce((sum, item) => sum + (item.subtotal || 0), 0)
+function calcularSubtotal(items) { return (items || []).reduce((s, i) => s + (parseFloat(i.subtotal) || 0), 0) }
+function calcularTotal(items, igv) { const s = calcularSubtotal(items); return igv ? s * 1.18 : s }
+
+async function cargarImagen(url) {
+  try {
+    const res  = await fetch(url)
+    const blob = await res.blob()
+    return new Promise(resolve => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve(reader.result)
+      reader.onerror  = () => resolve(null)
+      reader.readAsDataURL(blob)
+    })
+  } catch { return null }
 }
 
-function calcularTotal(items, conIgv) {
-  const sub = calcularSubtotal(items)
-  return conIgv ? sub * 1.18 : sub
-}
+async function generarPDF(cot) {
+  const doc        = new jsPDF()
+  const sub        = calcularSubtotal(cot.items || [])
+  const total      = cot.total || 0
+  const W          = 210
+  const condiciones = cot.igv ? EMPRESA.condiciones_con_igv : EMPRESA.condiciones_sin_igv
 
-// ── Generador de PDF ──────────────────────────────────────────────────────────
-function generarPDF(cot) {
-  const doc = new jsPDF()
-  const sub  = calcularSubtotal(cot.items || [])
-  const total = cot.total || 0
-
-  // Título
-  doc.setFontSize(14)
-  doc.setFont('helvetica', 'bold')
-  doc.text(`COTIZACIÓN N.° ${cot.numero}`, 105, 18, { align: 'center' })
-
-  // Fecha
-  doc.setFontSize(10)
-  doc.setFont('helvetica', 'normal')
-  doc.text(`Fecha: ${cot.fecha}`, 14, 28)
-
-  // Datos empresa
-  doc.setFontSize(10)
-  doc.text(`Razón Social: ${EMPRESA.razon_social}`, 14, 36)
-  doc.text(`RUC: ${EMPRESA.ruc}`, 14, 42)
-  const dirLines = doc.splitTextToSize(`Dirección: ${EMPRESA.direccion}`, 180)
-  doc.text(dirLines, 14, 48)
-  const yDespuesDireccion = 48 + dirLines.length * 5
-
-  // Datos cliente
-  doc.setFont('helvetica', 'bold')
-  doc.text(`Cliente: ${cot.cliente_nombre || ''}`, 14, yDespuesDireccion + 6)
-  if (cot.cliente_documento) {
-    doc.setFont('helvetica', 'normal')
-    doc.text(`${cot.cliente_tipo_doc || 'DNI'}: ${cot.cliente_documento}`, 14, yDespuesDireccion + 12)
+  // Cargar imágenes de productos
+  const imagenesBase64 = {}
+  for (const item of (cot.items || [])) {
+    const rutaImg = IMAGENES_PRODUCTOS[item.descripcion]
+    if (rutaImg && !imagenesBase64[item.descripcion]) {
+      imagenesBase64[item.descripcion] = await cargarImagen(rutaImg)
+    }
   }
 
-  const yTabla = yDespuesDireccion + (cot.cliente_documento ? 20 : 16)
+  // ── Encabezado verde ──
+  doc.setFillColor(...VERDE); doc.rect(0, 0, W, 40, 'F')
+  doc.setFillColor(...BEIGE); doc.rect(0, 40, W, 3, 'F')
+  doc.setTextColor(...BEIGE); doc.setFontSize(20); doc.setFont('helvetica', 'bold')
+  doc.text(EMPRESA.nombre_comercial.toUpperCase(), W / 2, 14, { align: 'center' })
+  doc.setFontSize(8); doc.setFont('helvetica', 'italic')
+  doc.text(`"${EMPRESA.slogan}"`, W / 2, 21, { align: 'center' })
+  doc.setFontSize(8.5); doc.setFont('helvetica', 'normal')
+  doc.text(`RUC: ${EMPRESA.ruc}  |  Telf: ${EMPRESA.telefono}`, W / 2, 28, { align: 'center' })
+  const dirCorta = doc.splitTextToSize(EMPRESA.direccion, 160)
+  doc.text(dirCorta[0], W / 2, 35, { align: 'center' })
 
-  // Título tabla
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(11)
-  doc.text('Detalle de la Cotización', 14, yTabla)
+  // ── Título ──
+  doc.setFillColor(...BEIGE_FONDO); doc.rect(0, 43, W, 14, 'F')
+  doc.setTextColor(...VERDE); doc.setFontSize(14); doc.setFont('helvetica', 'bold')
+  doc.text(`COTIZACIÓN N.° ${cot.numero}`, W / 2, 53, { align: 'center' })
 
-  // Tabla de ítems
+  // ── Cajas emisor / cliente ──
+  let y = 63
+  const boxH   = 38
+  const margen = 10
+  const cajaW  = (W - margen * 2 - 6) / 2
+  const caja2X = margen + cajaW + 6
+
+  // Caja EMISOR
+  doc.setFillColor(250, 248, 244); doc.roundedRect(margen, y, cajaW, boxH, 2, 2, 'F')
+  doc.setDrawColor(...VERDE); doc.setLineWidth(0.5); doc.roundedRect(margen, y, cajaW, boxH, 2, 2, 'S')
+  doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...VERDE)
+  doc.text('EMISOR', margen + 4, y + 6)
+  doc.setFont('helvetica', 'normal'); doc.setTextColor(...GRIS_TEXTO)
+  doc.text(EMPRESA.razon_social, margen + 4, y + 12)
+  doc.text(`RUC: ${EMPRESA.ruc}`, margen + 4, y + 18)
+  const dirLines = doc.splitTextToSize(EMPRESA.direccion, cajaW - 8)
+  doc.text(dirLines[0], margen + 4, y + 24)
+  if (dirLines[1]) doc.text(dirLines[1], margen + 4, y + 29)
+
+  // Caja CLIENTE
+  doc.setFillColor(250, 248, 244); doc.roundedRect(caja2X, y, cajaW, boxH, 2, 2, 'F')
+  doc.setDrawColor(...VERDE); doc.setLineWidth(0.5); doc.roundedRect(caja2X, y, cajaW, boxH, 2, 2, 'S')
+  doc.setFont('helvetica', 'bold'); doc.setTextColor(...VERDE)
+  doc.text('CLIENTE', caja2X + 4, y + 6)
+  doc.setFontSize(8); doc.setTextColor(...GRIS_TEXTO)
+  doc.text(`Fecha: ${cot.fecha}`, caja2X + cajaW - 4, y + 6, { align: 'right' })
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5)
+  doc.text(cot.cliente_nombre || '', caja2X + 4, y + 12)
+  if (cot.cliente_documento) doc.text(`${cot.cliente_tipo_doc || 'DNI'}: ${cot.cliente_documento}`, caja2X + 4, y + 18)
+  if (cot.cliente_direccion) {
+    const dc = doc.splitTextToSize(cot.cliente_direccion, cajaW - 8)
+    doc.text(dc[0], caja2X + 4, y + 24)
+    if (dc[1]) doc.text(dc[1], caja2X + 4, y + 29)
+  }
+  y += boxH + 6
+
+  // ── Título tabla ──
+  const tableWidth = W - 20
+  const tableX     = 10
+  const colWidths  = {
+    producto:  Math.round(tableWidth * 0.28),
+    formato:   Math.round(tableWidth * 0.30),
+    cantidad:  Math.round(tableWidth * 0.13),
+    precio:    Math.round(tableWidth * 0.15),
+    subtotal:  Math.round(tableWidth * 0.14),
+  }
+
+  doc.setFillColor(...VERDE); doc.rect(tableX, y, tableWidth, 7, 'F')
+  doc.setTextColor(...BEIGE); doc.setFontSize(9); doc.setFont('helvetica', 'bold')
+  doc.text('DETALLE DE LA COTIZACIÓN', W / 2, y + 5, { align: 'center' })
+  y += 7
+
+  // ── Tabla con imágenes ──
   autoTable(doc, {
-    startY: yTabla + 4,
-    head: [['Producto', 'Formato / Tipo', 'Cantidad\n(m²)', 'Precio Metro Cuadrado\n(S/)', 'Subtotal\n(S/)']],
+    startY:     y,
+    margin:     { left: tableX, right: tableX },
+    tableWidth: tableWidth,
+    head: [['Producto', 'Formato / Tipo', 'Cantidad\n(m²)', 'Precio\nUnit. (S/)', 'Subtotal\n(S/)']],
     body: (cot.items || []).map(item => [
       item.descripcion || '',
-      item.formato     || item.tipo,
-      item.cantidad,
+      item.formato     || '',
+      item.cantidad    || 0,
       parseFloat(item.precio_unit || 0).toFixed(2),
       parseFloat(item.subtotal    || 0).toFixed(2),
     ]),
-    headStyles: {
-      fillColor: [255, 255, 255],
-      textColor: [0, 0, 0],
-      fontStyle: 'bold',
-      lineWidth: 0.3,
-      lineColor: [0, 0, 0],
-      halign: 'center',
-    },
-    bodyStyles: {
-      lineWidth: 0.3,
-      lineColor: [0, 0, 0],
-      halign: 'center',
-    },
+    headStyles:         { fillColor: VERDE_CLARO, textColor: BLANCO, fontStyle: 'bold', halign: 'center', fontSize: 9, lineWidth: 0 },
+    bodyStyles:         { textColor: NEGRO, fontSize: 9, lineColor: [220, 210, 195], lineWidth: 0.3, minCellHeight: 18 },
+    alternateRowStyles: { fillColor: BEIGE_FONDO },
     columnStyles: {
-      0: { halign: 'left',  cellWidth: 45 },
-      1: { halign: 'center', cellWidth: 55 },
-      2: { halign: 'center', cellWidth: 20 },
-      3: { halign: 'center', cellWidth: 35 },
-      4: { halign: 'center', cellWidth: 30 },
+      0: { halign: 'left',   cellWidth: colWidths.producto  },
+      1: { halign: 'center', cellWidth: colWidths.formato   },
+      2: { halign: 'center', cellWidth: colWidths.cantidad  },
+      3: { halign: 'center', cellWidth: colWidths.precio    },
+      4: { halign: 'center', cellWidth: colWidths.subtotal  },
     },
-    styles: { fontSize: 10 },
+    tableLineColor: [200, 190, 175], tableLineWidth: 0.3,
+    didDrawCell: (data) => {
+      if (data.section === 'body' && data.column.index === 0) {
+        const item   = (cot.items || [])[data.row.index]
+        const imgB64 = item ? imagenesBase64[item.descripcion] : null
+        if (imgB64) {
+          const imgSize = 12
+          const imgX    = data.cell.x + data.cell.width - imgSize - 2
+          const imgY    = data.cell.y + (data.cell.height - imgSize) / 2
+          try { doc.addImage(imgB64, 'PNG', imgX, imgY, imgSize, imgSize) } catch {}
+        }
+      }
+    },
   })
 
-  let yPos = doc.lastAutoTable.finalY + 8
+  y = doc.lastAutoTable.finalY
+  const cajaTotalX = tableX + tableWidth - 80
+  const cajaTotalW = 80
 
-  // Total
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(10)
-  const textoTotal = cot.igv
-    ? `Incluye IGV (18%), total a Pagar: S/ ${total.toFixed(2)}`
-    : `No incluye IGV, total a Pagar: S/ ${total.toFixed(2)}`
-  doc.text(textoTotal, 195, yPos, { align: 'right' })
-  yPos += 10
-
-  // Condiciones
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(10)
-  doc.text('Condiciones', 14, yPos)
-  yPos += 5
-  doc.setFont('helvetica', 'normal')
-  EMPRESA.condiciones.forEach(cond => {
-    doc.text(`  - ${cond}`, 14, yPos)
-    yPos += 5
-  })
-
-  // Notas adicionales
-  if (cot.notas) {
-    yPos += 3
-    doc.setFont('helvetica', 'bold')
-    doc.text('Observaciones:', 14, yPos)
-    yPos += 5
-    doc.setFont('helvetica', 'normal')
-    const notaLines = doc.splitTextToSize(cot.notas, 180)
-    doc.text(notaLines, 14, yPos)
-    yPos += notaLines.length * 5
+  if (cot.igv) {
+    doc.setFillColor(250, 248, 244); doc.rect(cajaTotalX, y, cajaTotalW, 8, 'F')
+    doc.setDrawColor(...VERDE_CLARO); doc.setLineWidth(0.3); doc.rect(cajaTotalX, y, cajaTotalW, 8, 'S')
+    doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GRIS_TEXTO)
+    doc.text('Subtotal:', cajaTotalX + 4, y + 5.5)
+    doc.text(`S/ ${sub.toFixed(2)}`, cajaTotalX + cajaTotalW - 4, y + 5.5, { align: 'right' })
+    y += 8
+    doc.setFillColor(250, 248, 244); doc.rect(cajaTotalX, y, cajaTotalW, 8, 'F')
+    doc.setDrawColor(...VERDE_CLARO); doc.rect(cajaTotalX, y, cajaTotalW, 8, 'S')
+    doc.text('IGV (18%):', cajaTotalX + 4, y + 5.5)
+    doc.text(`S/ ${(sub * 0.18).toFixed(2)}`, cajaTotalX + cajaTotalW - 4, y + 5.5, { align: 'right' })
+    y += 8
   }
 
-  // Firma
-  yPos += 10
-  doc.text('Atentamente,', 14, yPos)
-  yPos += 14
-  doc.line(14, yPos, 80, yPos)
-  yPos += 5
-  doc.text(`${EMPRESA.razon_social} - RUC ${EMPRESA.ruc}`, 14, yPos)
+  doc.setFillColor(...VERDE); doc.rect(cajaTotalX, y, cajaTotalW, 10, 'F')
+  doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(...BEIGE)
+  doc.text('TOTAL A PAGAR:', cajaTotalX + 4, y + 7)
+  doc.text(`S/ ${total.toFixed(2)}`, cajaTotalX + cajaTotalW - 4, y + 7, { align: 'right' })
+  y += 14
 
-  // Pie de página con datos bancarios
-  const yPie = 272
-  doc.setDrawColor(0)
-  doc.line(14, yPie - 4, 196, yPie - 4)
+  doc.setFontSize(8); doc.setFont('helvetica', 'italic'); doc.setTextColor(...GRIS_TEXTO)
+  if (cot.igv) doc.text('Precio incluye IGV (18%)', cajaTotalX, y)
+  y += 8
 
-  doc.setFontSize(9)
-  doc.setFont('helvetica', 'bold')
-  doc.text(`Teléfono: ${EMPRESA.telefono}`, 14, yPie)
+  // ── Condiciones ──
+  doc.setFillColor(...VERDE); doc.rect(tableX, y, tableWidth, 6, 'F')
+  doc.setFontSize(8.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...BEIGE)
+  doc.text('CONDICIONES', tableX + 4, y + 4.5)
+  y += 9
+  doc.setFont('helvetica', 'normal'); doc.setTextColor(...GRIS_TEXTO); doc.setFontSize(8.5)
+  condiciones.forEach(c => { doc.text(`• ${c}`, 12, y); y += 5 })
 
-  doc.setFont('helvetica', 'normal')
-  doc.text(`CTA BCP: ${EMPRESA.bcp_cuenta}`, 14, yPie + 5)
-  doc.text(`CCI: ${EMPRESA.bcp_cci}`, 80, yPie + 5)
-  doc.text(EMPRESA.nombre_titular, 160, yPie + 5)
+  if (cot.notas) {
+    y += 2; doc.setFont('helvetica', 'bold'); doc.setTextColor(...VERDE)
+    doc.text('Observaciones:', 12, y); y += 5
+    doc.setFont('helvetica', 'normal'); doc.setTextColor(...GRIS_TEXTO)
+    const nl = doc.splitTextToSize(cot.notas, tableWidth); doc.text(nl, 12, y); y += nl.length * 5
+  }
 
-  doc.text(`CTA BBVA: ${EMPRESA.bbva_cuenta}`, 14, yPie + 10)
-  doc.text(`CCI: ${EMPRESA.bbva_cci}`, 80, yPie + 10)
-  doc.text(EMPRESA.nombre_titular, 160, yPie + 10)
+  // ── Firma ──
+  y += 8; doc.setDrawColor(...VERDE); doc.setLineWidth(0.5); doc.line(12, y, 75, y); y += 5
+  doc.setFontSize(8.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...VERDE)
+  doc.text(EMPRESA.razon_social, 12, y)
+  doc.setFont('helvetica', 'normal'); doc.setTextColor(...GRIS_TEXTO)
+  doc.text(`RUC: ${EMPRESA.ruc}`, 12, y + 5)
 
-  doc.save(`cotizacion_${cot.numero}_${cot.cliente_nombre?.replace(/ /g, '_') || 'cliente'}.pdf`)
+  // ── Pie de página ──
+  const yPie = 278
+  doc.setFillColor(...VERDE); doc.rect(0, yPie, W, 20, 'F')
+  doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(...BEIGE)
+  doc.text(`Teléfono: ${EMPRESA.telefono}`, 10, yPie + 6)
+  doc.setFont('helvetica', 'normal'); doc.setTextColor(200, 220, 200)
+  doc.text(`CTA BCP: ${EMPRESA.bcp_cuenta}`, 10, yPie + 11)
+  doc.text(`CCI: ${EMPRESA.bcp_cci}`, 75, yPie + 11)
+  doc.text(EMPRESA.nombre_titular, 165, yPie + 11)
+  doc.text(`CTA BBVA: ${EMPRESA.bbva_cuenta}`, 10, yPie + 16)
+  doc.text(`CCI: ${EMPRESA.bbva_cci}`, 75, yPie + 16)
+  doc.text(EMPRESA.nombre_titular, 165, yPie + 16)
+
+  doc.save(`cotizacion_${cot.numero}.pdf`)
 }
 
-// ── Componente principal ──────────────────────────────────────────────────────
+// ── Componente ────────────────────────────────────────────────────────────────
 export default function Cotizaciones() {
-  const { cotizaciones, setCotizaciones, clientes, productos } = useApp()
+  const { cotizaciones, agregarCotizacion, actualizarCotizacion, eliminarCotizacion, clientes, productos } = useApp()
 
   const [mostrarForm, setMostrarForm]             = useState(false)
   const [seleccionada, setSeleccionada]           = useState(null)
   const [editandoId, setEditandoId]               = useState(null)
   const [confirmarEliminar, setConfirmarEliminar] = useState(null)
-  const [form, setForm] = useState({
-    cliente_id: '', cliente_nombre: '', cliente_documento: '', cliente_tipo_doc: 'DNI',
-    cliente_direccion: '',
+  const [guardando, setGuardando]                 = useState(false)
+  const [errorMsg, setErrorMsg]                   = useState('')
+
+  const formInicial = () => ({
+    cliente_id: '', cliente_nombre: '', cliente_documento: '',
+    cliente_tipo_doc: 'DNI', cliente_direccion: '',
     fecha: new Date().toISOString().split('T')[0],
     estado: 'borrador', items: [itemVacio()], notas: '', igv: false,
   })
+  const [form, setForm] = useState(formInicial())
 
   function actualizarItem(id, campo, valor) {
     setForm(prev => ({
       ...prev,
       items: prev.items.map(item => {
         if (item.id !== id) return item
-        const actualizado = { ...item, [campo]: valor }
-        if (campo === 'cantidad' || campo === 'precio_unit') {
-          actualizado.subtotal = parseFloat(actualizado.cantidad || 0) * parseFloat(actualizado.precio_unit || 0)
-        }
-        return actualizado
+        const u = { ...item, [campo]: valor }
+        if (campo === 'cantidad' || campo === 'precio_unit')
+          u.subtotal = parseFloat(u.cantidad || 0) * parseFloat(u.precio_unit || 0)
+        return u
       })
     }))
   }
 
-  function guardarCotizacion() {
-    if (!form.cliente_nombre) return
+  async function guardar() {
+    if (!form.cliente_nombre) { setErrorMsg('El nombre del cliente es obligatorio'); return }
+    setErrorMsg('')
     const total = calcularTotal(form.items, form.igv)
-    if (editandoId) {
-      setCotizaciones(prev => [...prev.map(c =>
-        c.id === editandoId ? { ...c, ...form, total } : c
-      )])
-      setEditandoId(null)
-    } else {
-      const numero = `COT-${String(cotizaciones.length + 1).padStart(4, '0')}`
-      setCotizaciones(prev => [...prev, { ...form, id: Date.now(), numero, total }])
+    const itemsLimpios = form.items.map(({ id, ...item }) => ({
+      tipo:        item.tipo        || 'material',
+      descripcion: item.descripcion || '',
+      formato:     item.formato     || '',
+      cantidad:    parseFloat(item.cantidad    || 0),
+      unidad:      item.unidad      || 'm²',
+      precio_unit: parseFloat(item.precio_unit || 0),
+      subtotal:    parseFloat(item.subtotal    || 0),
+    }))
+    const datos = {
+      cliente_id:        form.cliente_id        || null,
+      cliente_nombre:    form.cliente_nombre,
+      cliente_documento: form.cliente_documento || null,
+      cliente_tipo_doc:  form.cliente_tipo_doc  || 'DNI',
+      cliente_direccion: form.cliente_direccion || null,
+      fecha:             form.fecha,
+      estado:            form.estado,
+      items:             itemsLimpios,
+      igv:               form.igv,
+      total:             parseFloat(total.toFixed(2)),
+      notas:             form.notas || null,
     }
-    setMostrarForm(false)
-    resetForm()
-  }
-
-  function resetForm() {
-    setForm({
-      cliente_id: '', cliente_nombre: '', cliente_documento: '', cliente_tipo_doc: 'DNI',
-      cliente_direccion: '',
-      fecha: new Date().toISOString().split('T')[0],
-      estado: 'borrador', items: [itemVacio()], notas: '', igv: false,
-    })
+    setGuardando(true)
+    try {
+      if (editandoId) {
+        await actualizarCotizacion(editandoId, datos)
+        setEditandoId(null)
+      } else {
+        const numero = `COT-${String(cotizaciones.length + 1).padStart(4, '0')}`
+        await agregarCotizacion({ ...datos, numero })
+      }
+      setMostrarForm(false)
+      setForm(formInicial())
+    } catch (err) {
+      console.error('Error al guardar:', err)
+      setErrorMsg('Error al guardar. Revisa tu conexión e intenta de nuevo.')
+    } finally {
+      setGuardando(false)
+    }
   }
 
   function abrirEditar(c) {
     setEditandoId(c.id)
+    const itemsConId = (c.items || [itemVacio()]).map(item => ({ ...item, id: item.id || Date.now() + Math.random() }))
     setForm({
-      cliente_id:        c.cliente_id        || '',
-      cliente_nombre:    c.cliente_nombre    || '',
-      cliente_documento: c.cliente_documento || '',
-      cliente_tipo_doc:  c.cliente_tipo_doc  || 'DNI',
-      cliente_direccion: c.cliente_direccion || '',
-      fecha:             c.fecha,
-      estado:            c.estado,
-      items:             c.items,
-      notas:             c.notas             || '',
-      igv:               c.igv               || false,
+      cliente_id: c.cliente_id || '', cliente_nombre: c.cliente_nombre || '',
+      cliente_documento: c.cliente_documento || '', cliente_tipo_doc: c.cliente_tipo_doc || 'DNI',
+      cliente_direccion: c.cliente_direccion || '', fecha: c.fecha, estado: c.estado,
+      items: itemsConId, notas: c.notas || '', igv: c.igv || false,
     })
     setSeleccionada(null)
     setMostrarForm(true)
+    setErrorMsg('')
   }
 
-  function eliminarCotizacion(id) {
-    setCotizaciones(prev => [...prev.filter(c => c.id !== id)])
+  async function handleEliminar(id) {
+    await eliminarCotizacion(id)
     setSeleccionada(null)
     setConfirmarEliminar(null)
   }
 
-  // Al seleccionar cliente del dropdown, autocompletar datos
   function seleccionarCliente(clienteId) {
-    const c = clientes.find(c => c.id === parseInt(clienteId))
-    if (c) {
-      setForm(prev => ({
-        ...prev,
-        cliente_id:        clienteId,
-        cliente_nombre:    c.nombre,
-        cliente_documento: c.documento || '',
-        cliente_tipo_doc:  c.tipo      || 'DNI',
-        cliente_direccion: c.direccion || '',
-      }))
-    } else {
-      setForm(prev => ({ ...prev, cliente_id: clienteId }))
-    }
+    const c = clientes.find(c => String(c.id) === String(clienteId))
+    if (c) setForm(prev => ({ ...prev, cliente_id: clienteId, cliente_nombre: c.nombre, cliente_documento: c.documento || '', cliente_tipo_doc: c.tipo || 'DNI', cliente_direccion: c.direccion || '' }))
+    else   setForm(prev => ({ ...prev, cliente_id: clienteId }))
   }
+
+  function cerrarForm()    { setMostrarForm(false); setEditandoId(null); setErrorMsg('') }
+  function cerrarDetalle() { setSeleccionada(null) }
+  function cerrarEliminar(){ setConfirmarEliminar(null) }
 
   const productosNombres = productos.map(p => p.nombre)
 
@@ -291,7 +386,7 @@ export default function Cotizaciones() {
           <p style={{ color: '#D4C4A0', fontSize: '15px', fontWeight: '600' }}>Cotizaciones</p>
           <p style={{ color: '#a0b89a', fontSize: '12px', marginTop: '2px' }}>{cotizaciones.length} cotizaciones registradas</p>
         </div>
-        <button onClick={() => { setEditandoId(null); resetForm(); setMostrarForm(true) }}
+        <button onClick={() => { setEditandoId(null); setForm(formInicial()); setMostrarForm(true); setErrorMsg('') }}
           style={{ backgroundColor: '#D4C4A0', color: '#2D4A2D', border: 'none', borderRadius: '8px', padding: '8px 16px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
           <Plus size={16} /> Nueva cotización
         </button>
@@ -304,9 +399,7 @@ export default function Cotizaciones() {
           {Object.entries(estadoConfig).map(([key, val]) => (
             <div key={key} style={{ backgroundColor: '#fff', borderRadius: '10px', border: '1px solid #e0d8c8', padding: '14px' }}>
               <p style={{ fontSize: '11px', color: '#888', marginBottom: '6px' }}>{val.label}</p>
-              <p style={{ fontSize: '24px', fontWeight: '700', color: val.color }}>
-                {cotizaciones.filter(c => c.estado === key).length}
-              </p>
+              <p style={{ fontSize: '24px', fontWeight: '700', color: val.color }}>{cotizaciones.filter(c => c.estado === key).length}</p>
             </div>
           ))}
         </div>
@@ -319,7 +412,7 @@ export default function Cotizaciones() {
               <p>No hay cotizaciones aún</p>
             </div>
           ) : cotizaciones.map(c => {
-            const est = estadoConfig[c.estado]
+            const est = estadoConfig[c.estado] || estadoConfig.borrador
             return (
               <div key={c.id}
                 style={{ backgroundColor: '#fff', borderRadius: '10px', border: '1px solid #e0d8c8', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}
@@ -339,10 +432,8 @@ export default function Cotizaciones() {
                   {c.igv && <span style={{ fontSize: '10px', backgroundColor: '#E6F1FB', color: '#185FA5', padding: '2px 7px', borderRadius: '20px', fontWeight: '600' }}>+IGV</span>}
                   <p style={{ fontSize: '15px', fontWeight: '700', color: '#2D4A2D' }}>S/ {(c.total || 0).toFixed(2)}</p>
                   <span style={{ fontSize: '11px', backgroundColor: est.bg, color: est.color, padding: '3px 10px', borderRadius: '20px', fontWeight: '500' }}>{est.label}</span>
-                  {/* Botón descargar PDF */}
                   <button onClick={e => { e.stopPropagation(); generarPDF(c) }}
-                    style={{ background: '#EAF3DE', border: 'none', borderRadius: '7px', width: '30px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                    title="Descargar PDF">
+                    style={{ background: '#EAF3DE', border: 'none', borderRadius: '7px', width: '30px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }} title="Descargar PDF">
                     <Download size={14} color="#3B6D11" />
                   </button>
                   <button onClick={e => { e.stopPropagation(); abrirEditar(c) }}
@@ -362,8 +453,8 @@ export default function Cotizaciones() {
 
       {/* Modal detalle */}
       {seleccionada && (
-        <div onClick={() => setSeleccionada(null)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
-          <div onClick={e => e.stopPropagation()} style={{ backgroundColor: '#fff', borderRadius: '16px', width: '100%', maxWidth: '520px', maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
+          <div style={{ backgroundColor: '#fff', borderRadius: '16px', width: '100%', maxWidth: '520px', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ backgroundColor: '#2D4A2D', padding: '1.25rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <p style={{ color: '#D4C4A0', fontSize: '16px', fontWeight: '600' }}>{seleccionada.numero}</p>
@@ -374,37 +465,37 @@ export default function Cotizaciones() {
                   style={{ backgroundColor: '#D4C4A0', color: '#2D4A2D', border: 'none', borderRadius: '8px', padding: '6px 12px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
                   <Download size={13} /> PDF
                 </button>
-                <button onClick={() => setSeleccionada(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#a0b89a' }}><X size={20} /></button>
+                <button onClick={cerrarDetalle} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#a0b89a' }}><X size={20} /></button>
               </div>
             </div>
             <div style={{ padding: '1.5rem' }}>
-
-              {/* Info cliente */}
               {(seleccionada.cliente_documento || seleccionada.cliente_direccion) && (
                 <div style={{ backgroundColor: '#f9f6f0', borderRadius: '8px', padding: '10px 12px', marginBottom: '14px' }}>
                   {seleccionada.cliente_documento && <p style={{ fontSize: '12px', color: '#555' }}><strong>{seleccionada.cliente_tipo_doc}:</strong> {seleccionada.cliente_documento}</p>}
                   {seleccionada.cliente_direccion && <p style={{ fontSize: '12px', color: '#555', marginTop: '3px' }}><strong>Dirección:</strong> {seleccionada.cliente_direccion}</p>}
                 </div>
               )}
-
-              <p style={{ fontSize: '12px', fontWeight: '600', color: '#888', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Detalle</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
-                {seleccionada.items?.map(item => (
-                  <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', backgroundColor: '#f9f6f0', borderRadius: '8px' }}>
-                    <div>
-                      <span style={{ fontSize: '10px', backgroundColor: '#fff', color: tipoItemColor[item.tipo], border: `1px solid ${tipoItemColor[item.tipo]}`, padding: '1px 7px', borderRadius: '20px', fontWeight: '600', marginRight: '8px' }}>
-                        {tipoItemLabel[item.tipo]}
-                      </span>
-                      <span style={{ fontSize: '13px', color: '#2a2a2a' }}>{item.descripcion}</span>
-                      {item.formato && <span style={{ fontSize: '12px', color: '#888' }}> · {item.formato}</span>}
-                      <p style={{ fontSize: '11px', color: '#888', marginTop: '3px' }}>{item.cantidad} {item.unidad} × S/ {item.precio_unit}</p>
+                {(seleccionada.items || []).map((item, idx) => (
+                  <div key={item.id || idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', backgroundColor: '#f9f6f0', borderRadius: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      {IMAGENES_PRODUCTOS[item.descripcion] && (
+                        <img src={IMAGENES_PRODUCTOS[item.descripcion]} alt={item.descripcion}
+                          style={{ width: '36px', height: '36px', objectFit: 'cover', borderRadius: '6px', flexShrink: 0 }} />
+                      )}
+                      <div>
+                        <span style={{ fontSize: '10px', backgroundColor: '#fff', color: tipoItemColor[item.tipo] || '#2D4A2D', border: `1px solid ${tipoItemColor[item.tipo] || '#2D4A2D'}`, padding: '1px 7px', borderRadius: '20px', fontWeight: '600', marginRight: '8px' }}>
+                          {tipoItemLabel[item.tipo] || item.tipo}
+                        </span>
+                        <span style={{ fontSize: '13px', color: '#2a2a2a' }}>{item.descripcion}</span>
+                        {item.formato && <span style={{ fontSize: '12px', color: '#888' }}> · {item.formato}</span>}
+                        <p style={{ fontSize: '11px', color: '#888', marginTop: '3px' }}>{item.cantidad} {item.unidad} × S/ {item.precio_unit}</p>
+                      </div>
                     </div>
-                    <p style={{ fontSize: '14px', fontWeight: '600', color: '#2a2a2a' }}>S/ {(item.subtotal || 0).toFixed(2)}</p>
+                    <p style={{ fontSize: '14px', fontWeight: '600', color: '#2a2a2a' }}>S/ {(parseFloat(item.subtotal) || 0).toFixed(2)}</p>
                   </div>
                 ))}
               </div>
-
-              {/* Total */}
               <div style={{ borderTop: '2px solid #e0d8c8', paddingTop: '12px', marginBottom: '16px' }}>
                 {seleccionada.igv && (
                   <>
@@ -423,14 +514,12 @@ export default function Cotizaciones() {
                   <p style={{ fontSize: '20px', fontWeight: '700', color: '#2D4A2D' }}>S/ {(seleccionada.total || 0).toFixed(2)}</p>
                 </div>
               </div>
-
               {seleccionada.notas && (
                 <div style={{ backgroundColor: '#f9f6f0', borderRadius: '8px', padding: '10px 12px', marginBottom: '16px' }}>
                   <p style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Notas</p>
                   <p style={{ fontSize: '13px', color: '#555' }}>{seleccionada.notas}</p>
                 </div>
               )}
-
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button onClick={() => abrirEditar(seleccionada)}
                   style={{ flex: 1, backgroundColor: '#E6F1FB', color: '#185FA5', border: 'none', borderRadius: '8px', padding: '11px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
@@ -448,38 +537,36 @@ export default function Cotizaciones() {
 
       {/* Modal confirmar eliminar */}
       {confirmarEliminar && (
-        <div onClick={() => setConfirmarEliminar(null)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: '1rem' }}>
-          <div onClick={e => e.stopPropagation()} style={{ backgroundColor: '#fff', borderRadius: '14px', width: '100%', maxWidth: '360px', padding: '1.5rem', textAlign: 'center' }}>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: '1rem' }}>
+          <div style={{ backgroundColor: '#fff', borderRadius: '14px', width: '100%', maxWidth: '360px', padding: '1.5rem', textAlign: 'center' }}>
             <Trash2 size={32} color="#A32D2D" style={{ margin: '0 auto 14px' }} />
             <p style={{ fontSize: '16px', fontWeight: '600', marginBottom: '6px' }}>¿Eliminar cotización?</p>
             <p style={{ fontSize: '13px', color: '#888', marginBottom: '20px' }}>Se eliminará <strong>{confirmarEliminar.numero}</strong>. No se puede deshacer.</p>
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => setConfirmarEliminar(null)} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #e0d8c8', backgroundColor: '#fff', fontSize: '13px', cursor: 'pointer' }}>Cancelar</button>
-              <button onClick={() => eliminarCotizacion(confirmarEliminar.id)} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', backgroundColor: '#A32D2D', fontSize: '13px', fontWeight: '600', cursor: 'pointer', color: '#fff' }}>Sí, eliminar</button>
+              <button onClick={cerrarEliminar} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #e0d8c8', backgroundColor: '#fff', fontSize: '13px', cursor: 'pointer' }}>Cancelar</button>
+              <button onClick={() => handleEliminar(confirmarEliminar.id)} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', backgroundColor: '#A32D2D', fontSize: '13px', fontWeight: '600', cursor: 'pointer', color: '#fff' }}>Sí, eliminar</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal nueva / editar cotización */}
+      {/* Modal nueva / editar */}
       {mostrarForm && (
-        <div onClick={() => { setMostrarForm(false); setEditandoId(null) }} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
-          <div onClick={e => e.stopPropagation()} style={{ backgroundColor: '#fff', borderRadius: '16px', width: '100%', maxWidth: '580px', maxHeight: '92vh', overflowY: 'auto' }}>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
+          <div style={{ backgroundColor: '#fff', borderRadius: '16px', width: '100%', maxWidth: '580px', maxHeight: '92vh', overflowY: 'auto' }}>
             <div style={{ backgroundColor: '#2D4A2D', padding: '1.25rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <p style={{ color: '#D4C4A0', fontSize: '16px', fontWeight: '600' }}>{editandoId ? 'Editar cotización' : 'Nueva cotización'}</p>
-              <button onClick={() => { setMostrarForm(false); setEditandoId(null) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#a0b89a' }}><X size={20} /></button>
+              <button onClick={cerrarForm} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#a0b89a' }}><X size={20} /></button>
             </div>
 
             <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '14px' }}>
 
-              {/* Datos del cliente */}
+              {/* Datos cliente */}
               <div style={{ backgroundColor: '#f9f6f0', borderRadius: '10px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <p style={{ fontSize: '12px', fontWeight: '600', color: '#2D4A2D', marginBottom: '2px' }}>Datos del cliente</p>
-
-                {/* Selector de cliente registrado */}
+                <p style={{ fontSize: '12px', fontWeight: '600', color: '#2D4A2D' }}>Datos del cliente</p>
                 {clientes.length > 0 && (
                   <div>
-                    <p style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Seleccionar cliente registrado (opcional)</p>
+                    <p style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Seleccionar cliente registrado</p>
                     <select value={form.cliente_id} onChange={e => seleccionarCliente(e.target.value)}
                       style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none', backgroundColor: '#fff' }}>
                       <option value="">— Ingresar manualmente —</option>
@@ -487,14 +574,12 @@ export default function Cotizaciones() {
                     </select>
                   </div>
                 )}
-
                 <div>
-                  <p style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Nombre completo / Razón social *</p>
+                  <p style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Nombre / Razón social *</p>
                   <input type="text" placeholder="Ej: Juan Andrés Calderón Estrada" value={form.cliente_nombre}
                     onChange={e => setForm({ ...form, cliente_nombre: e.target.value })}
-                    style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none' }} />
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: `1px solid ${errorMsg && !form.cliente_nombre ? '#f9a0a0' : '#e0d8c8'}`, fontSize: '13px', outline: 'none' }} />
                 </div>
-
                 <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '8px' }}>
                   <div>
                     <p style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Tipo doc.</p>
@@ -504,13 +589,12 @@ export default function Cotizaciones() {
                     </select>
                   </div>
                   <div>
-                    <p style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Número de documento</p>
+                    <p style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Número</p>
                     <input type="text" placeholder="Ej: 10720519" value={form.cliente_documento}
                       onChange={e => setForm({ ...form, cliente_documento: e.target.value })}
                       style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none' }} />
                   </div>
                 </div>
-
                 <div>
                   <p style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Dirección del cliente (opcional)</p>
                   <input type="text" placeholder="Ej: Av. Los Olivos 234, Lima" value={form.cliente_direccion}
@@ -544,7 +628,6 @@ export default function Cotizaciones() {
                     <Plus size={13} /> Agregar ítem
                   </button>
                 </div>
-
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {form.items.map(item => (
                     <div key={item.id} style={{ backgroundColor: '#f9f6f0', borderRadius: '10px', padding: '12px' }}>
@@ -568,20 +651,25 @@ export default function Cotizaciones() {
                         )}
                       </div>
 
-                      {/* Producto */}
+                      {/* Preview imagen del producto seleccionado */}
                       {item.tipo === 'material' ? (
-                        <select value={item.descripcion} onChange={e => actualizarItem(item.id, 'descripcion', e.target.value)}
-                          style={{ width: '100%', padding: '8px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none', backgroundColor: '#fff', marginBottom: '8px' }}>
-                          <option value="">Selecciona producto...</option>
-                          {productosNombres.map(p => <option key={p} value={p}>{p}</option>)}
-                        </select>
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
+                          {IMAGENES_PRODUCTOS[item.descripcion] && (
+                            <img src={IMAGENES_PRODUCTOS[item.descripcion]} alt={item.descripcion}
+                              style={{ width: '44px', height: '44px', objectFit: 'cover', borderRadius: '8px', flexShrink: 0, border: '1px solid #e0d8c8' }} />
+                          )}
+                          <select value={item.descripcion} onChange={e => actualizarItem(item.id, 'descripcion', e.target.value)}
+                            style={{ flex: 1, padding: '8px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none', backgroundColor: '#fff' }}>
+                            <option value="">Selecciona producto...</option>
+                            {productosNombres.map(p => <option key={p} value={p}>{p}</option>)}
+                          </select>
+                        </div>
                       ) : (
                         <input type="text" placeholder="Descripción del servicio..." value={item.descripcion}
                           onChange={e => actualizarItem(item.id, 'descripcion', e.target.value)}
                           style={{ width: '100%', padding: '8px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none', marginBottom: '8px' }} />
                       )}
 
-                      {/* Formato / Tipo */}
                       <input type="text" placeholder="Formato / Tipo (Ej: Formato 20x10, Retazo irregular...)" value={item.formato || ''}
                         onChange={e => actualizarItem(item.id, 'formato', e.target.value)}
                         style={{ width: '100%', padding: '8px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none', marginBottom: '8px' }} />
@@ -589,8 +677,7 @@ export default function Cotizaciones() {
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
                         <div>
                           <p style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Cantidad</p>
-                          <input type="number" min="0" value={item.cantidad}
-                            onChange={e => actualizarItem(item.id, 'cantidad', e.target.value)}
+                          <input type="number" min="0" value={item.cantidad} onChange={e => actualizarItem(item.id, 'cantidad', e.target.value)}
                             style={{ width: '100%', padding: '7px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none' }} />
                         </div>
                         <div>
@@ -602,19 +689,18 @@ export default function Cotizaciones() {
                         </div>
                         <div>
                           <p style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Precio unit. (S/)</p>
-                          <input type="number" min="0" value={item.precio_unit}
-                            onChange={e => actualizarItem(item.id, 'precio_unit', e.target.value)}
+                          <input type="number" min="0" value={item.precio_unit} onChange={e => actualizarItem(item.id, 'precio_unit', e.target.value)}
                             style={{ width: '100%', padding: '7px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none' }} />
                         </div>
                       </div>
                       <div style={{ textAlign: 'right', marginTop: '8px' }}>
-                        <span style={{ fontSize: '13px', fontWeight: '700', color: '#2D4A2D' }}>Subtotal: S/ {(item.subtotal || 0).toFixed(2)}</span>
+                        <span style={{ fontSize: '13px', fontWeight: '700', color: '#2D4A2D' }}>Subtotal: S/ {(parseFloat(item.subtotal) || 0).toFixed(2)}</span>
                       </div>
                     </div>
                   ))}
                 </div>
 
-                {/* Total con IGV */}
+                {/* Total IGV */}
                 <div style={{ marginTop: '12px', backgroundColor: '#2D4A2D', borderRadius: '10px', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ color: '#a0b89a', fontSize: '13px' }}>Incluir IGV (18%)</span>
@@ -647,13 +733,20 @@ export default function Cotizaciones() {
               <div>
                 <p style={{ fontSize: '12px', fontWeight: '600', color: '#555', marginBottom: '6px' }}>Notas / Condiciones adicionales</p>
                 <textarea value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })}
-                  placeholder="Observaciones, condiciones especiales de entrega..." rows={3}
+                  placeholder="Observaciones, condiciones especiales..." rows={3}
                   style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none', resize: 'vertical', fontFamily: 'inherit' }} />
               </div>
 
-              <button onClick={guardarCotizacion}
-                style={{ width: '100%', backgroundColor: '#2D4A2D', color: '#D4C4A0', border: 'none', borderRadius: '8px', padding: '12px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>
-                {editandoId ? 'Guardar cambios' : 'Guardar cotización'}
+              {errorMsg && (
+                <div style={{ backgroundColor: '#FCEBEB', borderRadius: '8px', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ color: '#A32D2D', fontSize: '16px' }}>⚠</span>
+                  <p style={{ color: '#A32D2D', fontSize: '13px', fontWeight: '500' }}>{errorMsg}</p>
+                </div>
+              )}
+
+              <button onClick={guardar} disabled={guardando}
+                style={{ width: '100%', backgroundColor: '#2D4A2D', color: '#D4C4A0', border: 'none', borderRadius: '8px', padding: '12px', fontSize: '14px', fontWeight: '600', cursor: guardando ? 'wait' : 'pointer', opacity: guardando ? 0.7 : 1 }}>
+                {guardando ? 'Guardando...' : editandoId ? 'Guardar cambios' : 'Guardar cotización'}
               </button>
             </div>
           </div>
