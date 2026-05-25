@@ -297,7 +297,11 @@ export default function Cotizaciones() {
       if (editandoId) {
         await actualizarCotizacion(editandoId, datos); setEditandoId(null)
       } else {
-        const numero = `COT-${String(cotizaciones.length + 1).padStart(4, '0')}`
+        const ultimoNum = cotizaciones.reduce((max, c) => {
+          const num = parseInt(c.numero?.replace('COT-', '') || '0')
+          return num > max ? num : max
+        }, 0)
+        const numero = `COT-${String(ultimoNum + 1).padStart(4, '0')}`
         await agregarCotizacion({ ...datos, numero })
       }
       setMostrarForm(false); setForm(formInicial())
