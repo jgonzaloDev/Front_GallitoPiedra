@@ -1,7 +1,184 @@
 import { useState } from 'react'
-import { Plus, X, ShoppingCart, Truck, CheckCircle, Clock, CreditCard, Trash2, Edit2 } from 'lucide-react'
+import { Plus, X, ShoppingCart, Truck, CheckCircle, Clock, CreditCard, Trash2, Edit2, Download } from 'lucide-react'
 import { useApp } from '../context/AppContext'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
+// ── Datos empresa ─────────────────────────────────────────────────────────────
+const EMPRESA = {
+  nombre_comercial: 'Decoraciones Gallito y Piedra',
+  slogan:           'Piedra y Laja: Elegancia Natural que Perdura',
+  razon_social:     'Félix Mendoza Ochante',
+  ruc:              '10091300775',
+  direccion:        'Jr. Flor Iris Sn Asc. de Servicios Múltiples SA Int. 23 Alt. Comisaría Pamplona 1, San Juan de Miraflores - Lima - Lima',
+  telefono:         '952739105',
+  bcp_cuenta:       '19493170245057',
+  bcp_cci:          '00219419317024505793',
+  bbva_cuenta:      '00110814-0279182672-16',
+  bbva_cci:         '011-814-0000279182672-16',
+  nombre_titular:   'Félix Mendoza Ochante',
+}
+
+const VERDE       = [45, 74, 45]
+const VERDE_CLARO = [74, 124, 89]
+const BEIGE       = [212, 196, 160]
+const BEIGE_FONDO = [245, 240, 232]
+const BLANCO      = [255, 255, 255]
+const GRIS        = [80, 80, 80]
+const NEGRO       = [30, 30, 30]
+
+// ── Generador PDF Venta ───────────────────────────────────────────────────────
+async function generarPDFVenta(venta) {
+  const doc = new jsPDF()
+  const W   = 210
+
+  // Encabezado
+  doc.setFillColor(...VERDE); doc.rect(0, 0, W, 40, 'F')
+  doc.setFillColor(...BEIGE); doc.rect(0, 40, W, 3, 'F')
+  doc.setTextColor(...BEIGE); doc.setFontSize(20); doc.setFont('helvetica', 'bold')
+  doc.text(EMPRESA.nombre_comercial.toUpperCase(), W / 2, 14, { align: 'center' })
+  doc.setFontSize(8); doc.setFont('helvetica', 'italic')
+  doc.text(`"${EMPRESA.slogan}"`, W / 2, 21, { align: 'center' })
+  doc.setFontSize(8.5); doc.setFont('helvetica', 'normal')
+  doc.text(`RUC: ${EMPRESA.ruc}  |  Telf: ${EMPRESA.telefono}`, W / 2, 28, { align: 'center' })
+  doc.text(doc.splitTextToSize(EMPRESA.direccion, 160)[0], W / 2, 35, { align: 'center' })
+
+  // Título
+  doc.setFillColor(...BEIGE_FONDO); doc.rect(0, 43, W, 14, 'F')
+  doc.setTextColor(...VERDE); doc.setFontSize(14); doc.setFont('helvetica', 'bold')
+  doc.text(`COMPROBANTE DE VENTA N.° ${venta.numero}`, W / 2, 53, { align: 'center' })
+
+  // Cajas vendedor / cliente
+  let y = 63
+  const boxH  = 38
+  const margen = 10
+  const cajaW  = (W - margen * 2 - 6) / 2
+  const caja2X = margen + cajaW + 6
+
+  doc.setFillColor(250, 248, 244); doc.roundedRect(margen, y, cajaW, boxH, 2, 2, 'F')
+  doc.setDrawColor(...VERDE); doc.setLineWidth(0.5); doc.roundedRect(margen, y, cajaW, boxH, 2, 2, 'S')
+  doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...VERDE)
+  doc.text('VENDEDOR', margen + 4, y + 6)
+  doc.setFont('helvetica', 'normal'); doc.setTextColor(...GRIS)
+  doc.text(EMPRESA.razon_social, margen + 4, y + 12)
+  doc.text(`RUC: ${EMPRESA.ruc}`, margen + 4, y + 18)
+  const dl = doc.splitTextToSize(EMPRESA.direccion, cajaW - 8)
+  doc.text(dl[0], margen + 4, y + 24)
+  if (dl[1]) doc.text(dl[1], margen + 4, y + 29)
+
+  doc.setFillColor(250, 248, 244); doc.roundedRect(caja2X, y, cajaW, boxH, 2, 2, 'F')
+  doc.setDrawColor(...VERDE); doc.setLineWidth(0.5); doc.roundedRect(caja2X, y, cajaW, boxH, 2, 2, 'S')
+  doc.setFont('helvetica', 'bold'); doc.setTextColor(...VERDE)
+  doc.text('CLIENTE', caja2X + 4, y + 6)
+  doc.setFontSize(8); doc.setTextColor(...GRIS)
+  doc.text(`Fecha: ${venta.fecha}`, caja2X + cajaW - 4, y + 6, { align: 'right' })
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5)
+  doc.text(venta.cliente_nombre || '', caja2X + 4, y + 12)
+  if (venta.cotizacion) doc.text(`Ref. Cotización: ${venta.cotizacion}`, caja2X + 4, y + 18)
+  y += boxH + 6
+
+  // Tabla detalle
+  const tableWidth = W - 20
+  const tableX     = 10
+
+  doc.setFillColor(...VERDE); doc.rect(tableX, y, tableWidth, 7, 'F')
+  doc.setTextColor(...BEIGE); doc.setFontSize(9); doc.setFont('helvetica', 'bold')
+  doc.text('DETALLE DE LA VENTA', W / 2, y + 5, { align: 'center' })
+  y += 7
+
+  autoTable(doc, {
+    startY: y, margin: { left: tableX, right: tableX }, tableWidth,
+    head: [['Descripción / Notas', 'Medio de pago', 'Total (S/)']],
+    body: [[
+      venta.notas || 'Venta de material',
+      venta.medio_pago || 'Efectivo',
+      parseFloat(venta.total || 0).toFixed(2),
+    ]],
+    headStyles: { fillColor: VERDE_CLARO, textColor: BLANCO, fontStyle: 'bold', halign: 'center', fontSize: 9, lineWidth: 0 },
+    bodyStyles: { textColor: NEGRO, fontSize: 9, lineColor: [220, 210, 195], lineWidth: 0.3, minCellHeight: 16 },
+    alternateRowStyles: { fillColor: BEIGE_FONDO },
+    columnStyles: {
+      0: { halign: 'left',   cellWidth: Math.round(tableWidth * 0.55) },
+      1: { halign: 'center', cellWidth: Math.round(tableWidth * 0.22) },
+      2: { halign: 'center', cellWidth: Math.round(tableWidth * 0.23) },
+    },
+    tableLineColor: [200, 190, 175], tableLineWidth: 0.3,
+  })
+
+  y = doc.lastAutoTable.finalY
+
+  // Caja pagos
+  const cajaX = tableX + tableWidth - 90
+  const cajaW2 = 90
+
+  // Total
+  doc.setFillColor(250, 248, 244); doc.rect(cajaX, y, cajaW2, 8, 'F')
+  doc.setDrawColor(...VERDE_CLARO); doc.setLineWidth(0.3); doc.rect(cajaX, y, cajaW2, 8, 'S')
+  doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GRIS)
+  doc.text('Total venta:', cajaX + 4, y + 5.5)
+  doc.text(`S/ ${parseFloat(venta.total || 0).toFixed(2)}`, cajaX + cajaW2 - 4, y + 5.5, { align: 'right' })
+  y += 8
+
+  // Adelanto
+  doc.setFillColor(250, 248, 244); doc.rect(cajaX, y, cajaW2, 8, 'F')
+  doc.setDrawColor(...VERDE_CLARO); doc.rect(cajaX, y, cajaW2, 8, 'S')
+  doc.text('Adelanto recibido:', cajaX + 4, y + 5.5)
+  doc.text(`S/ ${parseFloat(venta.adelanto || 0).toFixed(2)}`, cajaX + cajaW2 - 4, y + 5.5, { align: 'right' })
+  y += 8
+
+  // Saldo pendiente
+  const saldo = parseFloat(venta.total || 0) - parseFloat(venta.adelanto || 0)
+  doc.setFillColor(...VERDE); doc.rect(cajaX, y, cajaW2, 10, 'F')
+  doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(...BEIGE)
+  doc.text('SALDO PENDIENTE:', cajaX + 4, y + 7)
+  doc.text(`S/ ${saldo.toFixed(2)}`, cajaX + cajaW2 - 4, y + 7, { align: 'right' })
+  y += 14
+
+  // Info entrega
+  const estadoLabel = { pendiente: 'Pendiente de entrega', en_camino: 'En camino', entregado: 'Entregado' }
+  doc.setFontSize(8.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GRIS)
+  doc.text(`Estado de entrega: ${estadoLabel[venta.estado_entrega] || venta.estado_entrega || 'Pendiente'}`, tableX, y)
+  y += 8
+
+  // Evidencia de pago
+  if (venta.evidencia) {
+    try {
+      doc.setFillColor(...VERDE); doc.rect(tableX, y, tableWidth, 6, 'F')
+      doc.setFontSize(8.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...BEIGE)
+      doc.text('EVIDENCIA DE PAGO', tableX + 4, y + 4.5)
+      y += 9
+      const imgW = 80, imgH = 60
+      const imgX = (W - imgW) / 2
+      doc.addImage(venta.evidencia, 'JPEG', imgX, y, imgW, imgH)
+      y += imgH + 6
+    } catch (e) { console.warn('Error al agregar evidencia:', e) }
+  }
+
+  // Firma
+  y += 6
+  doc.setDrawColor(...VERDE); doc.setLineWidth(0.5); doc.line(12, y, 75, y); y += 5
+  doc.setFontSize(8.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...VERDE)
+  doc.text(EMPRESA.razon_social, 12, y)
+  doc.setFont('helvetica', 'normal'); doc.setTextColor(...GRIS)
+  doc.text(`RUC: ${EMPRESA.ruc}`, 12, y + 5)
+
+  // Pie de página
+  const yPie = 278
+  doc.setFillColor(...VERDE); doc.rect(0, yPie, W, 20, 'F')
+  doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(...BEIGE)
+  doc.text(`Teléfono: ${EMPRESA.telefono}`, 10, yPie + 6)
+  doc.setFont('helvetica', 'normal'); doc.setTextColor(200, 220, 200)
+  doc.text(`CTA BCP: ${EMPRESA.bcp_cuenta}`, 10, yPie + 11)
+  doc.text(`CCI: ${EMPRESA.bcp_cci}`, 75, yPie + 11)
+  doc.text(EMPRESA.nombre_titular, 165, yPie + 11)
+  doc.text(`CTA BBVA: ${EMPRESA.bbva_cuenta}`, 10, yPie + 16)
+  doc.text(`CCI: ${EMPRESA.bbva_cci}`, 75, yPie + 16)
+  doc.text(EMPRESA.nombre_titular, 165, yPie + 16)
+
+  doc.save(`venta_${venta.numero}.pdf`)
+}
+
+// ── Configs ───────────────────────────────────────────────────────────────────
 const estadoPagoConfig = {
   pendiente: { label: 'Pendiente', color: '#A32D2D', bg: '#FCEBEB' },
   parcial:   { label: 'Adelanto',  color: '#854F0B', bg: '#FAEEDA' },
@@ -29,13 +206,15 @@ function calcularEstadoPago(total, adelanto) {
   return 'parcial'
 }
 
+// ── Componente ────────────────────────────────────────────────────────────────
 export default function Ventas() {
-  const { ventas, setVentas } = useApp()
+  const { ventas, agregarVenta, actualizarVenta, eliminarVenta } = useApp()
 
   const [seleccionada, setSeleccionada]           = useState(null)
   const [mostrarForm, setMostrarForm]             = useState(false)
   const [editandoId, setEditandoId]               = useState(null)
   const [confirmarEliminar, setConfirmarEliminar] = useState(null)
+  const [guardando, setGuardando]                 = useState(false)
   const [form, setForm]                           = useState(formVacio())
 
   const saldo = (parseFloat(form.total || 0) - parseFloat(form.adelanto || 0)).toFixed(2)
@@ -44,31 +223,35 @@ export default function Ventas() {
     const file = e.target.files[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = ev => {
-      if (esModal) actualizarCampo(seleccionada.id, 'evidencia', ev.target.result)
-      else setForm(prev => ({ ...prev, evidencia: ev.target.result }))
+    reader.onload = async ev => {
+      if (esModal && seleccionada) {
+        const updated = await actualizarVenta(seleccionada.id, { evidencia: ev.target.result })
+        if (updated) setSeleccionada(updated)
+      } else {
+        setForm(prev => ({ ...prev, evidencia: ev.target.result }))
+      }
     }
     reader.readAsDataURL(file)
   }
 
-  function actualizarCampo(id, campo, valor) {
-    const actualizar = v => {
-      if (v.id !== id) return v
-      const u = { ...v, [campo]: valor }
-      if (campo === 'adelanto') {
-        const a = parseFloat(valor || 0)
-        u.saldo       = v.total - a
-        u.estado_pago = calcularEstadoPago(v.total, a)
-      }
-      return u
+  async function actualizarCampo(id, campo, valor) {
+    const venta = ventas.find(v => v.id === id)
+    if (!venta) return
+    const cambios = { [campo]: valor }
+    if (campo === 'adelanto') {
+      const a = parseFloat(valor || 0)
+      cambios.saldo       = venta.total - a
+      cambios.estado_pago = calcularEstadoPago(venta.total, a)
     }
-    setVentas(prev => [...prev.map(actualizar)])
-    setSeleccionada(prev => prev ? actualizar(prev) : prev)
+    const updated = await actualizarVenta(id, cambios)
+    if (updated) setSeleccionada(updated)
   }
 
-  function marcarPagadoTotal(id) {
-    setVentas(prev => [...prev.map(v => v.id === id ? { ...v, adelanto: v.total, saldo: 0, estado_pago: 'pagado' } : v)])
-    setSeleccionada(prev => prev ? { ...prev, adelanto: prev.total, saldo: 0, estado_pago: 'pagado' } : prev)
+  async function marcarPagadoTotal(id) {
+    const venta = ventas.find(v => v.id === id)
+    if (!venta) return
+    const updated = await actualizarVenta(id, { adelanto: venta.total, saldo: 0, estado_pago: 'pagado' })
+    if (updated) setSeleccionada(updated)
   }
 
   function abrirEditar(v) {
@@ -88,37 +271,48 @@ export default function Ventas() {
     setMostrarForm(true)
   }
 
-  function eliminarVenta(id) {
-    setVentas(prev => [...prev.filter(v => v.id !== id)])
+  async function handleEliminar(id) {
+    await eliminarVenta(id)
     setSeleccionada(null)
     setConfirmarEliminar(null)
   }
 
-  function guardarVenta() {
+  async function guardarVenta() {
     if (!form.cliente_nombre || !form.total) return
     const total    = parseFloat(form.total)
     const adelanto = parseFloat(form.adelanto || 0)
-    if (editandoId) {
-      setVentas(prev => [...prev.map(v => v.id === editandoId
-        ? { ...v, ...form, total, adelanto, saldo: total - adelanto, estado_pago: calcularEstadoPago(total, adelanto) }
-        : v
-      )])
-      setEditandoId(null)
-    } else {
-      setVentas(prev => [...prev, {
-        ...form, id: Date.now(),
-        numero: `VTA-${String(ventas.length + 1).padStart(4, '0')}`,
-        total, adelanto, saldo: total - adelanto,
-        estado_pago: calcularEstadoPago(total, adelanto),
-      }])
+    const datos = {
+      ...form,
+      total,
+      adelanto,
+      saldo:       total - adelanto,
+      estado_pago: calcularEstadoPago(total, adelanto),
     }
-    setMostrarForm(false)
-    setForm(formVacio())
+    setGuardando(true)
+    try {
+      if (editandoId) {
+        await actualizarVenta(editandoId, datos)
+        setEditandoId(null)
+      } else {
+        const ultimoNum = ventas.reduce((max, v) => {
+          const num = parseInt(v.numero?.replace('VTA-', '') || '0')
+          return num > max ? num : max
+        }, 0)
+        const numero = `VTA-${String(ultimoNum + 1).padStart(4, '0')}`
+        await agregarVenta({ ...datos, numero })
+      }
+      setMostrarForm(false)
+      setForm(formVacio())
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setGuardando(false)
+    }
   }
 
   const totalVentas    = ventas.reduce((s, v) => s + (v.total   || 0), 0)
   const totalCobrado   = ventas.reduce((s, v) => s + (v.adelanto || 0), 0)
-  const totalPendiente = ventas.reduce((s, v) => s + (v.saldo   || 0), 0)
+  const totalPendiente = ventas.reduce((s, v) => s + ((v.total || 0) - (v.adelanto || 0)), 0)
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: '#f5f0e8', width: '100%' }}>
@@ -160,8 +354,8 @@ export default function Ventas() {
               <p>No hay ventas registradas aún</p>
             </div>
           ) : ventas.map(v => {
-            const ep = estadoPagoConfig[v.estado_pago]
-            const ee = estadoEntregaConfig[v.estado_entrega]
+            const ep = estadoPagoConfig[v.estado_pago]    || estadoPagoConfig.pendiente
+            const ee = estadoEntregaConfig[v.estado_entrega] || estadoEntregaConfig.pendiente
             return (
               <div key={v.id}
                 style={{ backgroundColor: '#fff', borderRadius: '10px', border: '1px solid #e0d8c8', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}
@@ -183,14 +377,20 @@ export default function Ventas() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   <div style={{ textAlign: 'right' }}>
                     <p style={{ fontSize: '15px', fontWeight: '700', color: '#2D4A2D' }}>S/ {(v.total || 0).toFixed(2)}</p>
-                    {(v.saldo || 0) > 0 && <p style={{ fontSize: '11px', color: '#A32D2D' }}>Saldo: S/ {(v.saldo || 0).toFixed(2)}</p>}
+                    {((v.total || 0) - (v.adelanto || 0)) > 0 && <p style={{ fontSize: '11px', color: '#A32D2D' }}>Saldo: S/ {((v.total || 0) - (v.adelanto || 0)).toFixed(2)}</p>}
                   </div>
                   <span style={{ fontSize: '11px', backgroundColor: ep.bg, color: ep.color, padding: '3px 10px', borderRadius: '20px', fontWeight: '500' }}>{ep.label}</span>
                   <span style={{ fontSize: '11px', backgroundColor: ee.bg, color: ee.color, padding: '3px 10px', borderRadius: '20px', fontWeight: '500' }}>{ee.label}</span>
-                  <button onClick={() => abrirEditar(v)} style={{ background: '#E6F1FB', border: 'none', borderRadius: '7px', width: '30px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                  <button onClick={e => { e.stopPropagation(); generarPDFVenta(v) }}
+                    style={{ background: '#EAF3DE', border: 'none', borderRadius: '7px', width: '30px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }} title="Descargar PDF">
+                    <Download size={14} color="#3B6D11" />
+                  </button>
+                  <button onClick={e => { e.stopPropagation(); abrirEditar(v) }}
+                    style={{ background: '#E6F1FB', border: 'none', borderRadius: '7px', width: '30px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                     <Edit2 size={14} color="#185FA5" />
                   </button>
-                  <button onClick={() => setConfirmarEliminar(v)} style={{ background: '#FCEBEB', border: 'none', borderRadius: '7px', width: '30px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                  <button onClick={e => { e.stopPropagation(); setConfirmarEliminar(v) }}
+                    style={{ background: '#FCEBEB', border: 'none', borderRadius: '7px', width: '30px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                     <Trash2 size={14} color="#A32D2D" />
                   </button>
                 </div>
@@ -202,35 +402,41 @@ export default function Ventas() {
 
       {/* Modal confirmar eliminar */}
       {confirmarEliminar && (
-        <div onClick={() => setConfirmarEliminar(null)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: '1rem' }}>
-          <div onClick={e => e.stopPropagation()} style={{ backgroundColor: '#fff', borderRadius: '14px', width: '100%', maxWidth: '360px', padding: '1.5rem', textAlign: 'center' }}>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: '1rem' }}>
+          <div style={{ backgroundColor: '#fff', borderRadius: '14px', width: '100%', maxWidth: '360px', padding: '1.5rem', textAlign: 'center' }}>
             <Trash2 size={32} color="#A32D2D" style={{ margin: '0 auto 14px' }} />
             <p style={{ fontSize: '16px', fontWeight: '600', marginBottom: '6px' }}>¿Eliminar venta?</p>
             <p style={{ fontSize: '13px', color: '#888', marginBottom: '20px' }}>Se eliminará <strong>{confirmarEliminar.numero}</strong> de {confirmarEliminar.cliente_nombre}. No se puede deshacer.</p>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button onClick={() => setConfirmarEliminar(null)} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #e0d8c8', backgroundColor: '#fff', fontSize: '13px', cursor: 'pointer' }}>Cancelar</button>
-              <button onClick={() => eliminarVenta(confirmarEliminar.id)} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', backgroundColor: '#A32D2D', fontSize: '13px', fontWeight: '600', cursor: 'pointer', color: '#fff' }}>Sí, eliminar</button>
+              <button onClick={() => handleEliminar(confirmarEliminar.id)} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', backgroundColor: '#A32D2D', fontSize: '13px', fontWeight: '600', cursor: 'pointer', color: '#fff' }}>Sí, eliminar</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal detalle venta */}
+      {/* Modal detalle venta — NO se cierra con click fuera */}
       {seleccionada && (
-        <div onClick={() => setSeleccionada(null)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
-          <div onClick={e => e.stopPropagation()} style={{ backgroundColor: '#fff', borderRadius: '16px', width: '100%', maxWidth: '480px', maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
+          <div style={{ backgroundColor: '#fff', borderRadius: '16px', width: '100%', maxWidth: '480px', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ backgroundColor: '#2D4A2D', padding: '1.25rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <p style={{ color: '#D4C4A0', fontSize: '16px', fontWeight: '600' }}>{seleccionada.numero}</p>
                 <p style={{ color: '#a0b89a', fontSize: '12px', marginTop: '2px' }}>{seleccionada.cliente_nombre} · {seleccionada.fecha}</p>
               </div>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <button onClick={() => generarPDFVenta(seleccionada)}
+                  style={{ backgroundColor: '#D4C4A0', color: '#2D4A2D', border: 'none', borderRadius: '8px', padding: '6px 12px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <Download size={13} /> PDF
+                </button>
                 <button onClick={() => abrirEditar(seleccionada)} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '7px', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Edit2 size={15} color="#D4C4A0" /></button>
                 <button onClick={() => { setConfirmarEliminar(seleccionada); setSeleccionada(null) }} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '7px', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Trash2 size={15} color="#f9a0a0" /></button>
                 <button onClick={() => setSeleccionada(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#a0b89a' }}><X size={20} /></button>
               </div>
             </div>
             <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+
+              {/* Resumen pagos */}
               <div style={{ backgroundColor: '#f9f6f0', borderRadius: '10px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ fontSize: '13px', color: '#888' }}>Total venta</span>
@@ -242,16 +448,19 @@ export default function Ventas() {
                 </div>
                 <div style={{ borderTop: '1px solid #e0d8c8', paddingTop: '8px', display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ fontSize: '13px', color: '#888' }}>Saldo pendiente</span>
-                  <span style={{ fontSize: '13px', fontWeight: '600', color: (seleccionada.saldo || 0) > 0 ? '#A32D2D' : '#3B6D11' }}>S/ {(seleccionada.saldo || 0).toFixed(2)}</span>
+                  <span style={{ fontSize: '13px', fontWeight: '600', color: ((seleccionada.total || 0) - (seleccionada.adelanto || 0)) > 0 ? '#A32D2D' : '#3B6D11' }}>
+                    S/ {((seleccionada.total || 0) - (seleccionada.adelanto || 0)).toFixed(2)}
+                  </span>
                 </div>
               </div>
 
+              {/* Actualizar adelanto */}
               <div>
                 <p style={{ fontSize: '12px', fontWeight: '600', color: '#555', marginBottom: '6px' }}>Actualizar adelanto (S/)</p>
                 <input type="number" min="0" max={seleccionada.total} value={seleccionada.adelanto}
                   onChange={e => actualizarCampo(seleccionada.id, 'adelanto', parseFloat(e.target.value || 0))}
                   style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none' }} />
-                {(seleccionada.saldo || 0) > 0 && (
+                {((seleccionada.total || 0) - (seleccionada.adelanto || 0)) > 0 && (
                   <button onClick={() => marcarPagadoTotal(seleccionada.id)}
                     style={{ marginTop: '8px', width: '100%', padding: '9px', borderRadius: '8px', border: '1.5px solid #3B6D11', backgroundColor: '#EAF3DE', color: '#3B6D11', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
                     ✓ Marcar venta como totalmente cancelada
@@ -259,6 +468,7 @@ export default function Ventas() {
                 )}
               </div>
 
+              {/* Evidencia */}
               <div>
                 <p style={{ fontSize: '12px', fontWeight: '600', color: '#555', marginBottom: '6px' }}>Evidencia de pago (foto)</p>
                 {seleccionada.evidencia ? (
@@ -278,6 +488,7 @@ export default function Ventas() {
                 )}
               </div>
 
+              {/* Medio de pago */}
               <div>
                 <p style={{ fontSize: '12px', fontWeight: '600', color: '#555', marginBottom: '8px' }}>Medio de pago</p>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -293,6 +504,7 @@ export default function Ventas() {
                 </div>
               </div>
 
+              {/* Estado entrega */}
               <div>
                 <p style={{ fontSize: '12px', fontWeight: '600', color: '#555', marginBottom: '8px' }}>Estado de entrega</p>
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -313,10 +525,11 @@ export default function Ventas() {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: estadoPagoConfig[seleccionada.estado_pago].bg, borderRadius: '8px', padding: '10px 14px' }}>
-                <CreditCard size={16} color={estadoPagoConfig[seleccionada.estado_pago].color} />
-                <span style={{ fontSize: '13px', fontWeight: '600', color: estadoPagoConfig[seleccionada.estado_pago].color }}>
-                  Estado de pago: {estadoPagoConfig[seleccionada.estado_pago].label}
+              {/* Estado pago badge */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: (estadoPagoConfig[seleccionada.estado_pago] || estadoPagoConfig.pendiente).bg, borderRadius: '8px', padding: '10px 14px' }}>
+                <CreditCard size={16} color={(estadoPagoConfig[seleccionada.estado_pago] || estadoPagoConfig.pendiente).color} />
+                <span style={{ fontSize: '13px', fontWeight: '600', color: (estadoPagoConfig[seleccionada.estado_pago] || estadoPagoConfig.pendiente).color }}>
+                  Estado de pago: {(estadoPagoConfig[seleccionada.estado_pago] || estadoPagoConfig.pendiente).label}
                 </span>
               </div>
 
@@ -327,24 +540,31 @@ export default function Ventas() {
                 </div>
               )}
 
-              <button onClick={() => setSeleccionada(null)}
-                style={{ width: '100%', backgroundColor: '#2D4A2D', color: '#D4C4A0', border: 'none', borderRadius: '8px', padding: '12px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>
-                ✓ Aceptar cambios
-              </button>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button onClick={() => generarPDFVenta(seleccionada)}
+                  style={{ flex: 1, backgroundColor: '#f9f6f0', color: '#2D4A2D', border: '1px solid #e0d8c8', borderRadius: '8px', padding: '12px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                  <Download size={14} /> Descargar PDF
+                </button>
+                <button onClick={() => setSeleccionada(null)}
+                  style={{ flex: 1, backgroundColor: '#2D4A2D', color: '#D4C4A0', border: 'none', borderRadius: '8px', padding: '12px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>
+                  ✓ Aceptar cambios
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal nueva / editar venta */}
+      {/* Modal nueva / editar — NO se cierra con click fuera */}
       {mostrarForm && (
-        <div onClick={() => { setMostrarForm(false); setEditandoId(null) }} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
-          <div onClick={e => e.stopPropagation()} style={{ backgroundColor: '#fff', borderRadius: '16px', width: '100%', maxWidth: '480px', maxHeight: '92vh', overflowY: 'auto' }}>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
+          <div style={{ backgroundColor: '#fff', borderRadius: '16px', width: '100%', maxWidth: '480px', maxHeight: '92vh', overflowY: 'auto' }}>
             <div style={{ backgroundColor: '#2D4A2D', padding: '1.25rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <p style={{ color: '#D4C4A0', fontSize: '16px', fontWeight: '600' }}>{editandoId ? 'Editar venta' : 'Nueva venta'}</p>
               <button onClick={() => { setMostrarForm(false); setEditandoId(null) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#a0b89a' }}><X size={20} /></button>
             </div>
             <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+
               {[
                 { label: 'Cliente *',                field: 'cliente_nombre', placeholder: 'Nombre del cliente' },
                 { label: 'N° Cotización (opcional)', field: 'cotizacion',     placeholder: 'Ej: COT-0001'       },
@@ -356,6 +576,7 @@ export default function Ventas() {
                     style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none' }} />
                 </div>
               ))}
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
                   <p style={{ fontSize: '12px', fontWeight: '600', color: '#555', marginBottom: '6px' }}>Fecha</p>
@@ -369,6 +590,7 @@ export default function Ventas() {
                     style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none' }} />
                 </div>
               </div>
+
               <div>
                 <p style={{ fontSize: '12px', fontWeight: '600', color: '#555', marginBottom: '6px' }}>Adelanto recibido (S/)</p>
                 <input type="number" min="0" placeholder="0.00" value={form.adelanto}
@@ -387,6 +609,8 @@ export default function Ventas() {
                   </>
                 )}
               </div>
+
+              {/* Evidencia */}
               <div>
                 <p style={{ fontSize: '12px', fontWeight: '600', color: '#555', marginBottom: '6px' }}>Evidencia de pago (foto)</p>
                 {form.evidencia ? (
@@ -405,6 +629,8 @@ export default function Ventas() {
                   </label>
                 )}
               </div>
+
+              {/* Medio de pago */}
               <div>
                 <p style={{ fontSize: '12px', fontWeight: '600', color: '#555', marginBottom: '8px' }}>Medio de pago</p>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -419,6 +645,8 @@ export default function Ventas() {
                   ))}
                 </div>
               </div>
+
+              {/* Estado entrega */}
               <div>
                 <p style={{ fontSize: '12px', fontWeight: '600', color: '#555', marginBottom: '8px' }}>Estado de entrega</p>
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -433,15 +661,18 @@ export default function Ventas() {
                   ))}
                 </div>
               </div>
+
+              {/* Notas */}
               <div>
                 <p style={{ fontSize: '12px', fontWeight: '600', color: '#555', marginBottom: '6px' }}>Notas</p>
                 <textarea value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })}
                   placeholder="Observaciones..." rows={3}
                   style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none', resize: 'vertical', fontFamily: 'inherit' }} />
               </div>
-              <button onClick={guardarVenta}
-                style={{ width: '100%', backgroundColor: '#2D4A2D', color: '#D4C4A0', border: 'none', borderRadius: '8px', padding: '12px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>
-                {editandoId ? 'Guardar cambios' : 'Registrar venta'}
+
+              <button onClick={guardarVenta} disabled={guardando}
+                style={{ width: '100%', backgroundColor: '#2D4A2D', color: '#D4C4A0', border: 'none', borderRadius: '8px', padding: '12px', fontSize: '14px', fontWeight: '600', cursor: guardando ? 'wait' : 'pointer', opacity: guardando ? 0.7 : 1 }}>
+                {guardando ? 'Guardando...' : editandoId ? 'Guardar cambios' : 'Registrar venta'}
               </button>
             </div>
           </div>
