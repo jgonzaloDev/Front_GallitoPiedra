@@ -1,33 +1,30 @@
 import { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { supabase } from './lib/supabase'
-import Login    from './pages/Login'
-import Sidebar  from './components/Sidebar'
-import Inicio   from './pages/Inicio'
-import Catalogo from './components/Catalogo'
-import Clientes from './pages/Clientes'
+import Login      from './pages/Login'
+import Sidebar    from './components/Sidebar'
+import Inicio     from './pages/Inicio'
+import Catalogo   from './components/Catalogo'
+import Clientes   from './pages/Clientes'
 import Cotizaciones from './pages/Cotizaciones'
-import Ventas   from './pages/Ventas'
-import Cortes   from './pages/Cortes'
-import Retazos  from './pages/Retazos'
-import Reportes from './pages/Reportes'
+import Ventas     from './pages/Ventas'
+import Contratos  from './pages/Contratos'
+import Cortes     from './pages/Cortes'
+import Retazos    from './pages/Retazos'
+import Reportes   from './pages/Reportes'
 
 export default function App() {
-  const [usuario, setUsuario] = useState(null)
+  const [usuario,     setUsuario]     = useState(null)
   const [verificando, setVerificando] = useState(true)
 
   useEffect(() => {
-    // Verificar si ya hay sesión activa
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUsuario(session?.user ?? null)
       setVerificando(false)
     })
-
-    // Escuchar cambios de sesión
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUsuario(session?.user ?? null)
     })
-
     return () => subscription.unsubscribe()
   }, [])
 
@@ -46,9 +43,7 @@ export default function App() {
     )
   }
 
-  if (!usuario) {
-    return <Login onLogin={setUsuario} />
-  }
+  if (!usuario) return <Login onLogin={setUsuario} />
 
   return (
     <BrowserRouter>
@@ -56,14 +51,15 @@ export default function App() {
         <Sidebar onLogout={handleLogout} usuario={usuario} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
           <Routes>
-            <Route path="/"             element={<Inicio />} />
-            <Route path="/catalogo"     element={<Catalogo />} />
-            <Route path="/clientes"     element={<Clientes />} />
+            <Route path="/"             element={<Inicio />}       />
+            <Route path="/catalogo"     element={<Catalogo />}     />
+            <Route path="/clientes"     element={<Clientes />}     />
             <Route path="/cotizaciones" element={<Cotizaciones />} />
-            <Route path="/ventas"       element={<Ventas />} />
-            <Route path="/cortes"       element={<Cortes />} />
-            <Route path="/retazos"      element={<Retazos />} />
-            <Route path="/reportes"     element={<Reportes />} />
+            <Route path="/ventas"       element={<Ventas />}       />
+            <Route path="/contratos"    element={<Contratos />}    />
+            <Route path="/cortes"       element={<Cortes />}       />
+            <Route path="/retazos"      element={<Retazos />}      />
+            <Route path="/reportes"     element={<Reportes />}     />
             <Route path="*"             element={<Navigate to="/" replace />} />
           </Routes>
         </div>
