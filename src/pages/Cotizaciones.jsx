@@ -47,6 +47,14 @@ const BLANCO      = [255, 255, 255]
 const GRIS_TEXTO  = [80, 80, 80]
 const NEGRO       = [30, 30, 30]
 
+// ── Formato de moneda con separadores de miles ────────────────────────────────
+function formatMonto(num) {
+  return parseFloat(num || 0).toLocaleString('es-PE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
+
 const estadoConfig = {
   borrador:  { label: 'Borrador',  color: '#5F5E5A', bg: '#F1EFE8' },
   enviada:   { label: 'Enviada',   color: '#185FA5', bg: '#E6F1FB' },
@@ -61,7 +69,7 @@ const itemVacio = () => ({
   id: Date.now() + Math.random(),
   tipo: 'material', descripcion: '', formato: '',
   cantidad: 1, unidad: 'm²', precio_unit: 0, subtotal: 0,
-  modo_descripcion: 'catalogo', // 'catalogo' | 'manual'
+  modo_descripcion: 'catalogo',
 })
 
 function calcularSubtotal(items) { return (items || []).reduce((s, i) => s + (parseFloat(i.subtotal) || 0), 0) }
@@ -81,7 +89,7 @@ async function cargarImagen(url) {
 }
 
 async function generarPDF(cot) {
-  const doc = new jsPDF()
+  const doc  = new jsPDF()
   const sub   = calcularSubtotal(cot.items || [])
   const total = cot.total || 0
   const W     = 210
@@ -160,9 +168,11 @@ async function generarPDF(cot) {
     startY: y, margin: { left: tableX, right: tableX }, tableWidth,
     head: [['Producto / Material', 'Formato / Tipo', 'Cantidad\n(m²)', 'Precio\nUnit. (S/)', 'Subtotal\n(S/)']],
     body: (cot.items || []).map(item => [
-      item.descripcion || '', item.formato || '', item.cantidad || 0,
-      parseFloat(item.precio_unit || 0).toFixed(2),
-      parseFloat(item.subtotal    || 0).toFixed(2),
+      item.descripcion || '',
+      item.formato     || '',
+      item.cantidad    || 0,
+      formatMonto(item.precio_unit || 0),
+      formatMonto(item.subtotal    || 0),
     ]),
     headStyles: { fillColor: VERDE_CLARO, textColor: BLANCO, fontStyle: 'bold', halign: 'center', fontSize: 9, lineWidth: 0 },
     bodyStyles: { textColor: NEGRO, fontSize: 9, lineColor: [220, 210, 195], lineWidth: 0.3, minCellHeight: 18 },
@@ -195,19 +205,19 @@ async function generarPDF(cot) {
     doc.setDrawColor(...VERDE_CLARO); doc.setLineWidth(0.3); doc.rect(cajaTotalX, y, cajaTotalW, 8, 'S')
     doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GRIS_TEXTO)
     doc.text('Subtotal:', cajaTotalX + 4, y + 5.5)
-    doc.text(`S/ ${sub.toFixed(2)}`, cajaTotalX + cajaTotalW - 4, y + 5.5, { align: 'right' })
+    doc.text(`S/ ${formatMonto(sub)}`, cajaTotalX + cajaTotalW - 4, y + 5.5, { align: 'right' })
     y += 8
     doc.setFillColor(250, 248, 244); doc.rect(cajaTotalX, y, cajaTotalW, 8, 'F')
     doc.setDrawColor(...VERDE_CLARO); doc.rect(cajaTotalX, y, cajaTotalW, 8, 'S')
     doc.text('IGV (18%):', cajaTotalX + 4, y + 5.5)
-    doc.text(`S/ ${(sub * 0.18).toFixed(2)}`, cajaTotalX + cajaTotalW - 4, y + 5.5, { align: 'right' })
+    doc.text(`S/ ${formatMonto(sub * 0.18)}`, cajaTotalX + cajaTotalW - 4, y + 5.5, { align: 'right' })
     y += 8
   }
 
   doc.setFillColor(...VERDE); doc.rect(cajaTotalX, y, cajaTotalW, 10, 'F')
   doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(...BEIGE)
   doc.text('TOTAL A PAGAR:', cajaTotalX + 4, y + 7)
-  doc.text(`S/ ${total.toFixed(2)}`, cajaTotalX + cajaTotalW - 4, y + 7, { align: 'right' })
+  doc.text(`S/ ${formatMonto(total)}`, cajaTotalX + cajaTotalW - 4, y + 7, { align: 'right' })
   y += 14
 
   doc.setFontSize(8); doc.setFont('helvetica', 'italic'); doc.setTextColor(...GRIS_TEXTO)
@@ -278,7 +288,6 @@ export default function Cotizaciones() {
         const u = { ...item, [campo]: valor }
         if (campo === 'cantidad' || campo === 'precio_unit')
           u.subtotal = parseFloat(u.cantidad || 0) * parseFloat(u.precio_unit || 0)
-        // Si cambia modo a manual, limpiar descripcion
         if (campo === 'modo_descripcion') u.descripcion = ''
         return u
       })
@@ -345,9 +354,7 @@ export default function Cotizaciones() {
   function abrirEditar(c) {
     setEditandoId(c.id)
     const itemsConId = (c.items || [itemVacio()]).map(item => ({
-      ...item,
-      id: item.id || Date.now() + Math.random(),
-      modo_descripcion: 'manual', // al editar, siempre modo manual para no perder datos
+      ...item, id: item.id || Date.now() + Math.random(), modo_descripcion: 'manual',
     }))
     setForm({
       cliente_id: c.cliente_id || '', cliente_nombre: c.cliente_nombre || '',
@@ -423,7 +430,7 @@ export default function Cotizaciones() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   {c.igv && <span style={{ fontSize: '10px', backgroundColor: '#E6F1FB', color: '#185FA5', padding: '2px 7px', borderRadius: '20px', fontWeight: '600' }}>+IGV</span>}
-                  <p style={{ fontSize: '15px', fontWeight: '700', color: '#2D4A2D' }}>S/ {(c.total || 0).toFixed(2)}</p>
+                  <p style={{ fontSize: '15px', fontWeight: '700', color: '#2D4A2D' }}>S/ {formatMonto(c.total)}</p>
                   <span style={{ fontSize: '11px', backgroundColor: est.bg, color: est.color, padding: '3px 10px', borderRadius: '20px', fontWeight: '500' }}>{est.label}</span>
                   <button onClick={e => { e.stopPropagation(); generarPDF(c) }} style={{ background: '#EAF3DE', border: 'none', borderRadius: '7px', width: '30px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }} title="PDF"><Download size={14} color="#3B6D11" /></button>
                   <button onClick={e => { e.stopPropagation(); abrirEditar(c) }} style={{ background: '#E6F1FB', border: 'none', borderRadius: '7px', width: '30px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><FileText size={14} color="#185FA5" /></button>
@@ -465,26 +472,37 @@ export default function Cotizaciones() {
                         <span style={{ fontSize: '10px', backgroundColor: '#fff', color: tipoItemColor[item.tipo] || '#2D4A2D', border: `1px solid ${tipoItemColor[item.tipo] || '#2D4A2D'}`, padding: '1px 7px', borderRadius: '20px', fontWeight: '600', marginRight: '8px' }}>{tipoItemLabel[item.tipo] || item.tipo}</span>
                         <span style={{ fontSize: '13px', color: '#2a2a2a' }}>{item.descripcion}</span>
                         {item.formato && <span style={{ fontSize: '12px', color: '#888' }}> · {item.formato}</span>}
-                        <p style={{ fontSize: '11px', color: '#888', marginTop: '3px' }}>{item.cantidad} {item.unidad} × S/ {item.precio_unit}</p>
+                        <p style={{ fontSize: '11px', color: '#888', marginTop: '3px' }}>{item.cantidad} {item.unidad} × S/ {formatMonto(item.precio_unit)}</p>
                       </div>
                     </div>
-                    <p style={{ fontSize: '14px', fontWeight: '600', color: '#2a2a2a' }}>S/ {(parseFloat(item.subtotal) || 0).toFixed(2)}</p>
+                    <p style={{ fontSize: '14px', fontWeight: '600', color: '#2a2a2a' }}>S/ {formatMonto(item.subtotal)}</p>
                   </div>
                 ))}
               </div>
               <div style={{ borderTop: '2px solid #e0d8c8', paddingTop: '12px', marginBottom: '16px' }}>
                 {seleccionada.igv && (
                   <>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}><span style={{ fontSize: '13px', color: '#888' }}>Subtotal</span><span style={{ fontSize: '13px', color: '#555' }}>S/ {calcularSubtotal(seleccionada.items || []).toFixed(2)}</span></div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}><span style={{ fontSize: '13px', color: '#888' }}>IGV (18%)</span><span style={{ fontSize: '13px', color: '#555' }}>S/ {(calcularSubtotal(seleccionada.items || []) * 0.18).toFixed(2)}</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '13px', color: '#888' }}>Subtotal</span>
+                      <span style={{ fontSize: '13px', color: '#555' }}>S/ {formatMonto(calcularSubtotal(seleccionada.items || []))}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                      <span style={{ fontSize: '13px', color: '#888' }}>IGV (18%)</span>
+                      <span style={{ fontSize: '13px', color: '#555' }}>S/ {formatMonto(calcularSubtotal(seleccionada.items || []) * 0.18)}</span>
+                    </div>
                   </>
                 )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <p style={{ fontSize: '15px', fontWeight: '600', color: '#2a2a2a' }}>Total {seleccionada.igv ? '(inc. IGV)' : ''}</p>
-                  <p style={{ fontSize: '20px', fontWeight: '700', color: '#2D4A2D' }}>S/ {(seleccionada.total || 0).toFixed(2)}</p>
+                  <p style={{ fontSize: '20px', fontWeight: '700', color: '#2D4A2D' }}>S/ {formatMonto(seleccionada.total)}</p>
                 </div>
               </div>
-              {seleccionada.notas && <div style={{ backgroundColor: '#f9f6f0', borderRadius: '8px', padding: '10px 12px', marginBottom: '14px' }}><p style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Notas</p><p style={{ fontSize: '13px', color: '#555' }}>{seleccionada.notas}</p></div>}
+              {seleccionada.notas && (
+                <div style={{ backgroundColor: '#f9f6f0', borderRadius: '8px', padding: '10px 12px', marginBottom: '14px' }}>
+                  <p style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Notas</p>
+                  <p style={{ fontSize: '13px', color: '#555' }}>{seleccionada.notas}</p>
+                </div>
+              )}
               <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
                 <button onClick={() => abrirEditar(seleccionada)} style={{ flex: 1, backgroundColor: '#E6F1FB', color: '#185FA5', border: 'none', borderRadius: '8px', padding: '11px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>Editar</button>
                 <button onClick={() => generarPDF(seleccionada)} style={{ flex: 1, backgroundColor: '#f9f6f0', color: '#2D4A2D', border: '1px solid #e0d8c8', borderRadius: '8px', padding: '11px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}><Download size={14} /> PDF</button>
@@ -591,7 +609,7 @@ export default function Cotizaciones() {
                   {form.items.map(item => (
                     <div key={item.id} style={{ backgroundColor: '#f9f6f0', borderRadius: '10px', padding: '12px' }}>
 
-                      {/* Fila tipo + eliminar */}
+                      {/* Tipo + eliminar */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                           {Object.entries(tipoItemLabel).map(([k, v]) => (
@@ -601,80 +619,62 @@ export default function Cotizaciones() {
                         {form.items.length > 1 && <button onClick={() => setForm(prev => ({ ...prev, items: prev.items.filter(i => i.id !== item.id) }))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#A32D2D' }}><Trash2 size={15} /></button>}
                       </div>
 
-                      {/* Campo material: catálogo O manual */}
+                      {/* Campo material */}
                       {item.tipo === 'material' ? (
                         <div style={{ marginBottom: '8px' }}>
                           {/* Toggle catálogo / manual */}
                           <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
-                            <button
-                              onClick={() => actualizarItem(item.id, 'modo_descripcion', 'catalogo')}
-                              style={{ flex: 1, padding: '5px 8px', borderRadius: '7px', fontSize: '11px', cursor: 'pointer', border: (item.modo_descripcion || 'catalogo') === 'catalogo' ? '1.5px solid #2D4A2D' : '1px solid #e0d8c8', backgroundColor: (item.modo_descripcion || 'catalogo') === 'catalogo' ? '#EAF3DE' : '#fff', color: (item.modo_descripcion || 'catalogo') === 'catalogo' ? '#2D4A2D' : '#888', fontWeight: (item.modo_descripcion || 'catalogo') === 'catalogo' ? '600' : '400' }}>
+                            <button onClick={() => actualizarItem(item.id, 'modo_descripcion', 'catalogo')} style={{ flex: 1, padding: '5px 8px', borderRadius: '7px', fontSize: '11px', cursor: 'pointer', border: (item.modo_descripcion || 'catalogo') === 'catalogo' ? '1.5px solid #2D4A2D' : '1px solid #e0d8c8', backgroundColor: (item.modo_descripcion || 'catalogo') === 'catalogo' ? '#EAF3DE' : '#fff', color: (item.modo_descripcion || 'catalogo') === 'catalogo' ? '#2D4A2D' : '#888', fontWeight: (item.modo_descripcion || 'catalogo') === 'catalogo' ? '600' : '400' }}>
                               📋 Del catálogo
                             </button>
-                            <button
-                              onClick={() => actualizarItem(item.id, 'modo_descripcion', 'manual')}
-                              style={{ flex: 1, padding: '5px 8px', borderRadius: '7px', fontSize: '11px', cursor: 'pointer', border: item.modo_descripcion === 'manual' ? '1.5px solid #854F0B' : '1px solid #e0d8c8', backgroundColor: item.modo_descripcion === 'manual' ? '#FAEEDA' : '#fff', color: item.modo_descripcion === 'manual' ? '#854F0B' : '#888', fontWeight: item.modo_descripcion === 'manual' ? '600' : '400' }}>
-                              ✏️ Escribir manualmente
+                            <button onClick={() => actualizarItem(item.id, 'modo_descripcion', 'manual')} style={{ flex: 1, padding: '5px 8px', borderRadius: '7px', fontSize: '11px', cursor: 'pointer', border: item.modo_descripcion === 'manual' ? '1.5px solid #854F0B' : '1px solid #e0d8c8', backgroundColor: item.modo_descripcion === 'manual' ? '#FAEEDA' : '#fff', color: item.modo_descripcion === 'manual' ? '#854F0B' : '#888', fontWeight: item.modo_descripcion === 'manual' ? '600' : '400' }}>
+                              ✏️ Nuevo material
                             </button>
                           </div>
 
-                          {/* Selector catálogo */}
                           {(item.modo_descripcion || 'catalogo') === 'catalogo' ? (
                             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                               {IMAGENES_PRODUCTOS[item.descripcion] && (
-                                <img src={IMAGENES_PRODUCTOS[item.descripcion]} alt={item.descripcion}
-                                  style={{ width: '44px', height: '44px', objectFit: 'cover', borderRadius: '8px', flexShrink: 0, border: '1px solid #e0d8c8' }} />
+                                <img src={IMAGENES_PRODUCTOS[item.descripcion]} alt={item.descripcion} style={{ width: '44px', height: '44px', objectFit: 'cover', borderRadius: '8px', flexShrink: 0, border: '1px solid #e0d8c8' }} />
                               )}
-                              <select value={item.descripcion} onChange={e => actualizarItem(item.id, 'descripcion', e.target.value)}
-                                style={{ flex: 1, padding: '8px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none', backgroundColor: '#fff' }}>
+                              <select value={item.descripcion} onChange={e => actualizarItem(item.id, 'descripcion', e.target.value)} style={{ flex: 1, padding: '8px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none', backgroundColor: '#fff' }}>
                                 <option value="">— Selecciona del catálogo —</option>
                                 {productosNombres.map(p => <option key={p} value={p}>{p}</option>)}
                               </select>
                             </div>
                           ) : (
-                            /* Campo texto libre */
-                            <input
-                              type="text"
-                              placeholder="✏️ Digite el nombre del nuevo material..."
-                              value={item.descripcion}
-                              onChange={e => actualizarItem(item.id, 'descripcion', e.target.value)}
-                              style={{ width: '100%', padding: '8px 10px', borderRadius: '7px', border: '1.5px solid #854F0B', fontSize: '13px', outline: 'none', backgroundColor: '#fff' }}
-                            />
+                            <input type="text" placeholder="✏️ Digite el nombre del nuevo material..." value={item.descripcion} onChange={e => actualizarItem(item.id, 'descripcion', e.target.value)}
+                              style={{ width: '100%', padding: '8px 10px', borderRadius: '7px', border: '1.5px solid #854F0B', fontSize: '13px', outline: 'none', backgroundColor: '#fff' }} />
                           )}
                         </div>
                       ) : (
-                        <input type="text" placeholder="Descripción..." value={item.descripcion}
-                          onChange={e => actualizarItem(item.id, 'descripcion', e.target.value)}
+                        <input type="text" placeholder="Descripción..." value={item.descripcion} onChange={e => actualizarItem(item.id, 'descripcion', e.target.value)}
                           style={{ width: '100%', padding: '8px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none', marginBottom: '8px' }} />
                       )}
 
                       {/* Formato */}
-                      <input type="text" placeholder="Formato / Tipo (Ej: Formato 20x10, irregular...)" value={item.formato || ''}
-                        onChange={e => actualizarItem(item.id, 'formato', e.target.value)}
+                      <input type="text" placeholder="Formato / Tipo (Ej: 20x10, irregular...)" value={item.formato || ''} onChange={e => actualizarItem(item.id, 'formato', e.target.value)}
                         style={{ width: '100%', padding: '8px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none', marginBottom: '8px' }} />
 
                       {/* Cantidad, unidad, precio */}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
                         <div>
                           <p style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Cantidad</p>
-                          <input type="number" min="0" value={item.cantidad} onChange={e => actualizarItem(item.id, 'cantidad', e.target.value)}
-                            style={{ width: '100%', padding: '7px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none' }} />
+                          <input type="number" min="0" value={item.cantidad} onChange={e => actualizarItem(item.id, 'cantidad', e.target.value)} style={{ width: '100%', padding: '7px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none' }} />
                         </div>
                         <div>
                           <p style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Unidad</p>
-                          <select value={item.unidad} onChange={e => actualizarItem(item.id, 'unidad', e.target.value)}
-                            style={{ width: '100%', padding: '7px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none', backgroundColor: '#fff' }}>
+                          <select value={item.unidad} onChange={e => actualizarItem(item.id, 'unidad', e.target.value)} style={{ width: '100%', padding: '7px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none', backgroundColor: '#fff' }}>
                             <option>m²</option><option>ml</option><option>cm²</option><option>servicio</option><option>unidad</option>
                           </select>
                         </div>
                         <div>
                           <p style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Precio unit. (S/)</p>
-                          <input type="number" min="0" value={item.precio_unit} onChange={e => actualizarItem(item.id, 'precio_unit', e.target.value)}
-                            style={{ width: '100%', padding: '7px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none' }} />
+                          <input type="number" min="0" value={item.precio_unit} onChange={e => actualizarItem(item.id, 'precio_unit', e.target.value)} style={{ width: '100%', padding: '7px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none' }} />
                         </div>
                       </div>
                       <div style={{ textAlign: 'right', marginTop: '8px' }}>
-                        <span style={{ fontSize: '13px', fontWeight: '700', color: '#2D4A2D' }}>Subtotal: S/ {(parseFloat(item.subtotal) || 0).toFixed(2)}</span>
+                        <span style={{ fontSize: '13px', fontWeight: '700', color: '#2D4A2D' }}>Subtotal: S/ {formatMonto(item.subtotal)}</span>
                       </div>
                     </div>
                   ))}
@@ -690,14 +690,14 @@ export default function Cotizaciones() {
                   </div>
                   {form.igv && (
                     <>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#a0b89a', fontSize: '12px' }}>Subtotal</span><span style={{ color: '#D4C4A0', fontSize: '12px' }}>S/ {calcularSubtotal(form.items).toFixed(2)}</span></div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#a0b89a', fontSize: '12px' }}>IGV (18%)</span><span style={{ color: '#D4C4A0', fontSize: '12px' }}>S/ {(calcularSubtotal(form.items) * 0.18).toFixed(2)}</span></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#a0b89a', fontSize: '12px' }}>Subtotal</span><span style={{ color: '#D4C4A0', fontSize: '12px' }}>S/ {formatMonto(calcularSubtotal(form.items))}</span></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#a0b89a', fontSize: '12px' }}>IGV (18%)</span><span style={{ color: '#D4C4A0', fontSize: '12px' }}>S/ {formatMonto(calcularSubtotal(form.items) * 0.18)}</span></div>
                       <div style={{ borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: '4px' }} />
                     </>
                   )}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ color: '#D4C4A0', fontSize: '14px', fontWeight: '600' }}>Total {form.igv ? '(inc. IGV)' : ''}</span>
-                    <span style={{ color: '#D4C4A0', fontSize: '18px', fontWeight: '700' }}>S/ {calcularTotal(form.items, form.igv).toFixed(2)}</span>
+                    <span style={{ color: '#D4C4A0', fontSize: '18px', fontWeight: '700' }}>S/ {formatMonto(calcularTotal(form.items, form.igv))}</span>
                   </div>
                 </div>
               </div>
