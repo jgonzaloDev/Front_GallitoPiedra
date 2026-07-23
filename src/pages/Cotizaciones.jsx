@@ -61,6 +61,7 @@ const itemVacio = () => ({
   id: Date.now() + Math.random(),
   tipo: 'material', descripcion: '', formato: '',
   cantidad: 1, unidad: 'm²', precio_unit: 0, subtotal: 0,
+  modo_descripcion: 'catalogo', // 'catalogo' | 'manual'
 })
 
 function calcularSubtotal(items) { return (items || []).reduce((s, i) => s + (parseFloat(i.subtotal) || 0), 0) }
@@ -81,9 +82,9 @@ async function cargarImagen(url) {
 
 async function generarPDF(cot) {
   const doc = new jsPDF()
-  const sub = calcularSubtotal(cot.items || [])
+  const sub   = calcularSubtotal(cot.items || [])
   const total = cot.total || 0
-  const W = 210
+  const W     = 210
   const condiciones = cot.igv ? EMPRESA.condiciones_con_igv : EMPRESA.condiciones_sin_igv
 
   const imagenesBase64 = {}
@@ -109,10 +110,10 @@ async function generarPDF(cot) {
   doc.setTextColor(...VERDE); doc.setFontSize(14); doc.setFont('helvetica', 'bold')
   doc.text(`COTIZACIÓN N.° ${cot.numero}`, W / 2, 53, { align: 'center' })
 
-  // Cajas
+  // Cajas emisor / cliente
   let y = 63
   const boxH = 38, margen = 10
-  const cajaW = (W - margen * 2 - 6) / 2
+  const cajaW  = (W - margen * 2 - 6) / 2
   const caja2X = margen + cajaW + 6
 
   doc.setFillColor(250, 248, 244); doc.roundedRect(margen, y, cajaW, boxH, 2, 2, 'F')
@@ -135,7 +136,11 @@ async function generarPDF(cot) {
   doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5)
   doc.text(cot.cliente_nombre || '', caja2X + 4, y + 12)
   if (cot.cliente_documento) doc.text(`${cot.cliente_tipo_doc || 'DNI'}: ${cot.cliente_documento}`, caja2X + 4, y + 18)
-  if (cot.cliente_direccion) { const dc = doc.splitTextToSize(cot.cliente_direccion, cajaW - 8); doc.text(dc[0], caja2X + 4, y + 24); if (dc[1]) doc.text(dc[1], caja2X + 4, y + 29) }
+  if (cot.cliente_direccion) {
+    const dc = doc.splitTextToSize(cot.cliente_direccion, cajaW - 8)
+    doc.text(dc[0], caja2X + 4, y + 24)
+    if (dc[1]) doc.text(dc[1], caja2X + 4, y + 29)
+  }
   y += boxH + 6
 
   // Tabla
@@ -153,10 +158,11 @@ async function generarPDF(cot) {
 
   autoTable(doc, {
     startY: y, margin: { left: tableX, right: tableX }, tableWidth,
-    head: [['Producto', 'Formato / Tipo', 'Cantidad\n(m²)', 'Precio\nUnit. (S/)', 'Subtotal\n(S/)']],
+    head: [['Producto / Material', 'Formato / Tipo', 'Cantidad\n(m²)', 'Precio\nUnit. (S/)', 'Subtotal\n(S/)']],
     body: (cot.items || []).map(item => [
       item.descripcion || '', item.formato || '', item.cantidad || 0,
-      parseFloat(item.precio_unit || 0).toFixed(2), parseFloat(item.subtotal || 0).toFixed(2),
+      parseFloat(item.precio_unit || 0).toFixed(2),
+      parseFloat(item.subtotal    || 0).toFixed(2),
     ]),
     headStyles: { fillColor: VERDE_CLARO, textColor: BLANCO, fontStyle: 'bold', halign: 'center', fontSize: 9, lineWidth: 0 },
     bodyStyles: { textColor: NEGRO, fontSize: 9, lineColor: [220, 210, 195], lineWidth: 0.3, minCellHeight: 18 },
@@ -219,7 +225,8 @@ async function generarPDF(cot) {
     y += 2; doc.setFont('helvetica', 'bold'); doc.setTextColor(...VERDE)
     doc.text('Observaciones:', 12, y); y += 5
     doc.setFont('helvetica', 'normal'); doc.setTextColor(...GRIS_TEXTO)
-    const nl = doc.splitTextToSize(cot.notas, tableWidth); doc.text(nl, 12, y); y += nl.length * 5
+    const nl = doc.splitTextToSize(cot.notas, tableWidth)
+    doc.text(nl, 12, y); y += nl.length * 5
   }
 
   y += 8; doc.setDrawColor(...VERDE); doc.setLineWidth(0.5); doc.line(12, y, 75, y); y += 5
@@ -247,13 +254,13 @@ export default function Cotizaciones() {
   const { cotizaciones, agregarCotizacion, actualizarCotizacion, eliminarCotizacion,
           ventas, agregarVenta, clientes, productos } = useApp()
 
-  const [mostrarForm, setMostrarForm]           = useState(false)
-  const [seleccionada, setSeleccionada]         = useState(null)
-  const [editandoId, setEditandoId]             = useState(null)
+  const [mostrarForm, setMostrarForm]             = useState(false)
+  const [seleccionada, setSeleccionada]           = useState(null)
+  const [editandoId, setEditandoId]               = useState(null)
   const [confirmarEliminar, setConfirmarEliminar] = useState(null)
-  const [guardando, setGuardando]               = useState(false)
-  const [confirmandoVenta, setConfirmandoVenta] = useState(false)
-  const [errorMsg, setErrorMsg]                 = useState('')
+  const [guardando, setGuardando]                 = useState(false)
+  const [confirmandoVenta, setConfirmandoVenta]   = useState(false)
+  const [errorMsg, setErrorMsg]                   = useState('')
 
   const formInicial = () => ({
     cliente_id: '', cliente_nombre: '', cliente_documento: '',
@@ -271,6 +278,8 @@ export default function Cotizaciones() {
         const u = { ...item, [campo]: valor }
         if (campo === 'cantidad' || campo === 'precio_unit')
           u.subtotal = parseFloat(u.cantidad || 0) * parseFloat(u.precio_unit || 0)
+        // Si cambia modo a manual, limpiar descripcion
+        if (campo === 'modo_descripcion') u.descripcion = ''
         return u
       })
     }))
@@ -280,7 +289,7 @@ export default function Cotizaciones() {
     if (!form.cliente_nombre) { setErrorMsg('El nombre del cliente es obligatorio'); return }
     setErrorMsg('')
     const total = calcularTotal(form.items, form.igv)
-    const itemsLimpios = form.items.map(({ id, ...item }) => ({
+    const itemsLimpios = form.items.map(({ id, modo_descripcion, ...item }) => ({
       tipo: item.tipo || 'material', descripcion: item.descripcion || '',
       formato: item.formato || '', cantidad: parseFloat(item.cantidad || 0),
       unidad: item.unidad || 'm²', precio_unit: parseFloat(item.precio_unit || 0),
@@ -313,20 +322,17 @@ export default function Cotizaciones() {
   async function confirmarComoVenta(cot) {
     setConfirmandoVenta(true)
     try {
-      const numero = `VTA-${String(ventas.length + 1).padStart(4, '0')}`
+      const ultimoNum = ventas.reduce((max, v) => {
+        const num = parseInt(v.numero?.replace('VTA-', '') || '0')
+        return num > max ? num : max
+      }, 0)
+      const numero = `VTA-${String(ultimoNum + 1).padStart(4, '0')}`
       await agregarVenta({
-        numero,
-        cotizacion:     cot.numero,
-        cliente_nombre: cot.cliente_nombre,
-        fecha:          new Date().toISOString().split('T')[0],
-        total:          cot.total,
-        adelanto:       0,
-        saldo:          cot.total,
-        medio_pago:     'Efectivo',
-        estado_pago:    'pendiente',
-        estado_entrega: 'pendiente',
-        notas:          `Generada desde cotización ${cot.numero}`,
-        evidencia:      null,
+        numero, cotizacion: cot.numero, cliente_nombre: cot.cliente_nombre,
+        fecha: new Date().toISOString().split('T')[0],
+        total: cot.total, adelanto: 0, saldo: cot.total,
+        medio_pago: 'Efectivo', estado_pago: 'pendiente', estado_entrega: 'pendiente',
+        notas: `Generada desde cotización ${cot.numero}`, evidencia: null,
       })
       await actualizarCotizacion(cot.id, { estado: 'aceptada' })
       setSeleccionada(null)
@@ -338,7 +344,11 @@ export default function Cotizaciones() {
 
   function abrirEditar(c) {
     setEditandoId(c.id)
-    const itemsConId = (c.items || [itemVacio()]).map(item => ({ ...item, id: item.id || Date.now() + Math.random() }))
+    const itemsConId = (c.items || [itemVacio()]).map(item => ({
+      ...item,
+      id: item.id || Date.now() + Math.random(),
+      modo_descripcion: 'manual', // al editar, siempre modo manual para no perder datos
+    }))
     setForm({
       cliente_id: c.cliente_id || '', cliente_nombre: c.cliente_nombre || '',
       cliente_documento: c.cliente_documento || '', cliente_tipo_doc: c.cliente_tipo_doc || 'DNI',
@@ -482,8 +492,7 @@ export default function Cotizaciones() {
               {seleccionada.estado !== 'aceptada' ? (
                 <button onClick={() => confirmarComoVenta(seleccionada)} disabled={confirmandoVenta}
                   style={{ width: '100%', backgroundColor: '#2D4A2D', color: '#D4C4A0', border: 'none', borderRadius: '8px', padding: '12px', fontSize: '14px', fontWeight: '600', cursor: confirmandoVenta ? 'wait' : 'pointer', opacity: confirmandoVenta ? 0.7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                  <ShoppingCart size={16} />
-                  {confirmandoVenta ? 'Creando venta...' : 'Confirmar como venta'}
+                  <ShoppingCart size={16} />{confirmandoVenta ? 'Creando venta...' : 'Confirmar como venta'}
                 </button>
               ) : (
                 <div style={{ backgroundColor: '#EAF3DE', borderRadius: '8px', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -521,6 +530,7 @@ export default function Cotizaciones() {
             </div>
             <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '14px' }}>
 
+              {/* Datos cliente */}
               <div style={{ backgroundColor: '#f9f6f0', borderRadius: '10px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <p style={{ fontSize: '12px', fontWeight: '600', color: '#2D4A2D' }}>Datos del cliente</p>
                 {clientes.length > 0 && (
@@ -557,6 +567,7 @@ export default function Cotizaciones() {
                 </div>
               </div>
 
+              {/* Fecha y estado */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
                   <p style={{ fontSize: '12px', fontWeight: '600', color: '#555', marginBottom: '6px' }}>Fecha</p>
@@ -570,6 +581,7 @@ export default function Cotizaciones() {
                 </div>
               </div>
 
+              {/* Ítems */}
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                   <p style={{ fontSize: '12px', fontWeight: '600', color: '#555' }}>Ítems</p>
@@ -578,6 +590,8 @@ export default function Cotizaciones() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {form.items.map(item => (
                     <div key={item.id} style={{ backgroundColor: '#f9f6f0', borderRadius: '10px', padding: '12px' }}>
+
+                      {/* Fila tipo + eliminar */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                           {Object.entries(tipoItemLabel).map(([k, v]) => (
@@ -586,22 +600,78 @@ export default function Cotizaciones() {
                         </div>
                         {form.items.length > 1 && <button onClick={() => setForm(prev => ({ ...prev, items: prev.items.filter(i => i.id !== item.id) }))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#A32D2D' }}><Trash2 size={15} /></button>}
                       </div>
+
+                      {/* Campo material: catálogo O manual */}
                       {item.tipo === 'material' ? (
-                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
-                          {IMAGENES_PRODUCTOS[item.descripcion] && <img src={IMAGENES_PRODUCTOS[item.descripcion]} alt={item.descripcion} style={{ width: '44px', height: '44px', objectFit: 'cover', borderRadius: '8px', flexShrink: 0, border: '1px solid #e0d8c8' }} />}
-                          <select value={item.descripcion} onChange={e => actualizarItem(item.id, 'descripcion', e.target.value)} style={{ flex: 1, padding: '8px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none', backgroundColor: '#fff' }}>
-                            <option value="">Selecciona producto...</option>
-                            {productosNombres.map(p => <option key={p} value={p}>{p}</option>)}
-                          </select>
+                        <div style={{ marginBottom: '8px' }}>
+                          {/* Toggle catálogo / manual */}
+                          <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+                            <button
+                              onClick={() => actualizarItem(item.id, 'modo_descripcion', 'catalogo')}
+                              style={{ flex: 1, padding: '5px 8px', borderRadius: '7px', fontSize: '11px', cursor: 'pointer', border: (item.modo_descripcion || 'catalogo') === 'catalogo' ? '1.5px solid #2D4A2D' : '1px solid #e0d8c8', backgroundColor: (item.modo_descripcion || 'catalogo') === 'catalogo' ? '#EAF3DE' : '#fff', color: (item.modo_descripcion || 'catalogo') === 'catalogo' ? '#2D4A2D' : '#888', fontWeight: (item.modo_descripcion || 'catalogo') === 'catalogo' ? '600' : '400' }}>
+                              📋 Del catálogo
+                            </button>
+                            <button
+                              onClick={() => actualizarItem(item.id, 'modo_descripcion', 'manual')}
+                              style={{ flex: 1, padding: '5px 8px', borderRadius: '7px', fontSize: '11px', cursor: 'pointer', border: item.modo_descripcion === 'manual' ? '1.5px solid #854F0B' : '1px solid #e0d8c8', backgroundColor: item.modo_descripcion === 'manual' ? '#FAEEDA' : '#fff', color: item.modo_descripcion === 'manual' ? '#854F0B' : '#888', fontWeight: item.modo_descripcion === 'manual' ? '600' : '400' }}>
+                              ✏️ Escribir manualmente
+                            </button>
+                          </div>
+
+                          {/* Selector catálogo */}
+                          {(item.modo_descripcion || 'catalogo') === 'catalogo' ? (
+                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                              {IMAGENES_PRODUCTOS[item.descripcion] && (
+                                <img src={IMAGENES_PRODUCTOS[item.descripcion]} alt={item.descripcion}
+                                  style={{ width: '44px', height: '44px', objectFit: 'cover', borderRadius: '8px', flexShrink: 0, border: '1px solid #e0d8c8' }} />
+                              )}
+                              <select value={item.descripcion} onChange={e => actualizarItem(item.id, 'descripcion', e.target.value)}
+                                style={{ flex: 1, padding: '8px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none', backgroundColor: '#fff' }}>
+                                <option value="">Selecciona producto...</option>
+                                {productosNombres.map(p => <option key={p} value={p}>{p}</option>)}
+                              </select>
+                            </div>
+                          ) : (
+                            /* Campo texto libre */
+                            <input
+                              type="text"
+                              placeholder="Escribe el nombre del material (Ej: Piedra laja irregular, Granito gris...)"
+                              value={item.descripcion}
+                              onChange={e => actualizarItem(item.id, 'descripcion', e.target.value)}
+                              style={{ width: '100%', padding: '8px 10px', borderRadius: '7px', border: '1.5px solid #854F0B', fontSize: '13px', outline: 'none', backgroundColor: '#fff' }}
+                            />
+                          )}
                         </div>
                       ) : (
-                        <input type="text" placeholder="Descripción..." value={item.descripcion} onChange={e => actualizarItem(item.id, 'descripcion', e.target.value)} style={{ width: '100%', padding: '8px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none', marginBottom: '8px' }} />
+                        <input type="text" placeholder="Descripción..." value={item.descripcion}
+                          onChange={e => actualizarItem(item.id, 'descripcion', e.target.value)}
+                          style={{ width: '100%', padding: '8px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none', marginBottom: '8px' }} />
                       )}
-                      <input type="text" placeholder="Formato / Tipo (Ej: Formato 20x10...)" value={item.formato || ''} onChange={e => actualizarItem(item.id, 'formato', e.target.value)} style={{ width: '100%', padding: '8px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none', marginBottom: '8px' }} />
+
+                      {/* Formato */}
+                      <input type="text" placeholder="Formato / Tipo (Ej: Formato 20x10, irregular...)" value={item.formato || ''}
+                        onChange={e => actualizarItem(item.id, 'formato', e.target.value)}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none', marginBottom: '8px' }} />
+
+                      {/* Cantidad, unidad, precio */}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-                        <div><p style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Cantidad</p><input type="number" min="0" value={item.cantidad} onChange={e => actualizarItem(item.id, 'cantidad', e.target.value)} style={{ width: '100%', padding: '7px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none' }} /></div>
-                        <div><p style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Unidad</p><select value={item.unidad} onChange={e => actualizarItem(item.id, 'unidad', e.target.value)} style={{ width: '100%', padding: '7px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none', backgroundColor: '#fff' }}><option>m²</option><option>ml</option><option>cm²</option><option>servicio</option><option>unidad</option></select></div>
-                        <div><p style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Precio unit. (S/)</p><input type="number" min="0" value={item.precio_unit} onChange={e => actualizarItem(item.id, 'precio_unit', e.target.value)} style={{ width: '100%', padding: '7px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none' }} /></div>
+                        <div>
+                          <p style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Cantidad</p>
+                          <input type="number" min="0" value={item.cantidad} onChange={e => actualizarItem(item.id, 'cantidad', e.target.value)}
+                            style={{ width: '100%', padding: '7px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none' }} />
+                        </div>
+                        <div>
+                          <p style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Unidad</p>
+                          <select value={item.unidad} onChange={e => actualizarItem(item.id, 'unidad', e.target.value)}
+                            style={{ width: '100%', padding: '7px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none', backgroundColor: '#fff' }}>
+                            <option>m²</option><option>ml</option><option>cm²</option><option>servicio</option><option>unidad</option>
+                          </select>
+                        </div>
+                        <div>
+                          <p style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Precio unit. (S/)</p>
+                          <input type="number" min="0" value={item.precio_unit} onChange={e => actualizarItem(item.id, 'precio_unit', e.target.value)}
+                            style={{ width: '100%', padding: '7px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none' }} />
+                        </div>
                       </div>
                       <div style={{ textAlign: 'right', marginTop: '8px' }}>
                         <span style={{ fontSize: '13px', fontWeight: '700', color: '#2D4A2D' }}>Subtotal: S/ {(parseFloat(item.subtotal) || 0).toFixed(2)}</span>
@@ -610,6 +680,7 @@ export default function Cotizaciones() {
                   ))}
                 </div>
 
+                {/* Total con IGV */}
                 <div style={{ marginTop: '12px', backgroundColor: '#2D4A2D', borderRadius: '10px', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ color: '#a0b89a', fontSize: '13px' }}>Incluir IGV (18%)</span>
@@ -631,9 +702,11 @@ export default function Cotizaciones() {
                 </div>
               </div>
 
+              {/* Notas */}
               <div>
                 <p style={{ fontSize: '12px', fontWeight: '600', color: '#555', marginBottom: '6px' }}>Notas / Condiciones adicionales</p>
-                <textarea value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} placeholder="Observaciones..." rows={3} style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none', resize: 'vertical', fontFamily: 'inherit' }} />
+                <textarea value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} placeholder="Observaciones..." rows={3}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none', resize: 'vertical', fontFamily: 'inherit' }} />
               </div>
 
               {errorMsg && (
