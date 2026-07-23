@@ -627,7 +627,7 @@ export default function Cotizaciones() {
                               )}
                               <select value={item.descripcion} onChange={e => actualizarItem(item.id, 'descripcion', e.target.value)}
                                 style={{ flex: 1, padding: '8px 10px', borderRadius: '7px', border: '1px solid #e0d8c8', fontSize: '13px', outline: 'none', backgroundColor: '#fff' }}>
-                                <option value="">Selecciona producto...</option>
+                                <option value="">— Selecciona del catálogo —</option>
                                 {productosNombres.map(p => <option key={p} value={p}>{p}</option>)}
                               </select>
                             </div>
@@ -635,7 +635,7 @@ export default function Cotizaciones() {
                             /* Campo texto libre */
                             <input
                               type="text"
-                              placeholder="Escribe el nombre del material (Ej: Piedra laja irregular, Granito gris...)"
+                              placeholder="✏️ Digite el nombre del nuevo material..."
                               value={item.descripcion}
                               onChange={e => actualizarItem(item.id, 'descripcion', e.target.value)}
                               style={{ width: '100%', padding: '8px 10px', borderRadius: '7px', border: '1.5px solid #854F0B', fontSize: '13px', outline: 'none', backgroundColor: '#fff' }}
